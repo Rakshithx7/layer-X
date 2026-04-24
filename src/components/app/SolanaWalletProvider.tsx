@@ -7,7 +7,7 @@ import { useMemo } from "react";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 export function SolanaWalletProvider({ children }: { children: React.ReactNode }) {
-  const endpoint = useMemo(() => clusterApiUrl(WalletAdapterNetwork.Mainnet), []);
+  const endpoint = useMemo(() => clusterApiUrl(WalletAdapterNetwork.Devnet), []);
 
   const wallets = useMemo(
     () => (typeof window === "undefined" ? [] : [new PhantomWalletAdapter()]),

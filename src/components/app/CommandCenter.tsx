@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { Mic, ArrowUp, ExternalLink } from "lucide-react";
+import { LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { createContact, resolveRecipient, isValidSolanaAddress, listContacts, type Contact } from "@/lib/contacts";
 
 type ParsedTx =
@@ -39,6 +40,14 @@ const RUPEE_RATES: Record<string, number> = {
   ETH: 240000,
 };
 
+function normalizeTokenSymbol(symbol: string) {
+  const normalized = symbol.trim().toUpperCase();
+  if (normalized === "SOLANA") {
+    return "SOL";
+  }
+  return normalized;
+}
+
 function parseCommand(input: string): ParsedTx | null {
   const send = input
     .trim()
@@ -47,7 +56,7 @@ function parseCommand(input: string): ParsedTx | null {
     return {
       kind: "send",
       amount: parseFloat(send[1]),
-      token: send[2].toUpperCase(),
+      token: normalizeTokenSymbol(send[2]),
       recipientName: send[3],
       recipientLabel: send[3],
       recipientWallet: "",
@@ -61,8 +70,8 @@ function parseCommand(input: string): ParsedTx | null {
     return {
       kind: "swap",
       amount: parseFloat(swap[1]),
-      from: swap[2].toUpperCase(),
-      to: swap[3].toUpperCase(),
+      from: normalizeTokenSymbol(swap[2]),
+      to: normalizeTokenSymbol(swap[3]),
     };
   }
   return null;
@@ -70,13 +79,6 @@ function parseCommand(input: string): ParsedTx | null {
 
 function inr(n: number) {
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-}
-
-function randomHash() {
-  const chars = "abcdef0123456789";
-  let s = "";
-  for (let i = 0; i < 16; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `0x${s}`;
 }
 
 function truncateAddress(address: string, chars = 4) {
@@ -88,7 +90,8 @@ function truncateAddress(address: string, chars = 4) {
 }
 
 export function CommandCenter() {
-  const { publicKey, connected } = useWallet();
+  const { connection } = useConnection();
+  const { publicKey, connected, sendTransaction } = useWallet();
   const userId = publicKey?.toBase58() ?? null;
   const [input, setInput] = useState("");
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -265,13 +268,69 @@ export function CommandCenter() {
     }
   }
 
-  function handleConfirm() {
+  async function handleConfirm() {
     if (flow.phase !== "review") return;
+
+    if (!publicKey || !connected) {
+      appendSystem("Connect your wallet to sign and send transactions.");
+      return;
+    }
+
+    if (flow.tx.kind !== "send") {
+      appendSystem("Swap is still demo-only. Send is live on devnet.");
+      return;
+    }
+
+    if (flow.tx.token !== "SOL") {
+      appendSystem(`Only SOL transfers are supported on-chain right now. Received ${flow.tx.token}.`);
+      return;
+    }
+
     setFlow({ phase: "broadcasting", tx: flow.tx });
-    setTimeout(() => {
-      const hash = randomHash();
-      setFlow({ phase: "success", tx: flow.tx, hash });
-    }, 1400);
+
+    try {
+      const recipient = new PublicKey(flow.tx.recipientWallet);
+      const lamports = Math.round(flow.tx.amount * LAMPORTS_PER_SOL);
+
+      if (lamports <= 0) {
+        throw new Error("Amount must be greater than 0.");
+      }
+
+      const latestBlockhash = await connection.getLatestBlockhash("confirmed");
+      const transaction = new Transaction({
+        feePayer: publicKey,
+        recentBlockhash: latestBlockhash.blockhash,
+      }).add(
+        SystemProgram.transfer({
+          fromPubkey: publicKey,
+          toPubkey: recipient,
+          lamports,
+        }),
+      );
+
+      const signature = await sendTransaction(transaction, connection, {
+        preflightCommitment: "confirmed",
+      });
+
+      const confirmation = await connection.confirmTransaction(
+        {
+          signature,
+          blockhash: latestBlockhash.blockhash,
+          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        },
+        "confirmed",
+      );
+
+      if (confirmation.value.err) {
+        throw new Error("Transaction failed to confirm on devnet.");
+      }
+
+      setFlow({ phase: "success", tx: flow.tx, hash: signature });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Transaction failed";
+      appendSystem(`Transaction failed: ${message}`);
+      setFlow({ phase: "review", tx: flow.tx });
+    }
   }
 
   function handleCancel() {
@@ -497,6 +556,7 @@ function ReviewBlock({
           </>
         )}
         <Row label="Network" value="Solana" />
+        <Row label="Cluster" value="Devnet" />
         <Row label="Fee" mono value="0.000005 SOL" />
       </div>
 
@@ -556,7 +616,7 @@ function SuccessBlock({
       </div>
       <div className="mt-4 flex items-center gap-4">
         <a
-          href={`https://explorer.solana.com/tx/${hash}`}
+          href={`https://explorer.solana.com/tx/${hash}?cluster=devnet`}
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 text-xs text-primary transition-colors hover:text-primary-glow"
