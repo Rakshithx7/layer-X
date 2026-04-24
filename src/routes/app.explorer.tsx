@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useConnection } from "@solana/wallet-adapter-react";
-import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey, LAMPORTS_PER_SOL, Connection, clusterApiUrl } from "@solana/web3.js";
 import { Search, ExternalLink } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createContact, listContacts, type Contact } from "@/lib/contacts";
 
 type QueryType = "tx" | "wallet";
+type ExplorerNetwork = "devnet" | "mainnet-beta";
 
 type ExplorerResult =
   | {
@@ -15,6 +17,7 @@ type ExplorerResult =
       kind: "wallet";
       address: string;
       balanceSol: number;
+      network: ExplorerNetwork;
       recent: WalletActivity[];
     };
 
@@ -32,9 +35,11 @@ type TxSummary = {
   valueInrLabel: string;
   fromLabel: string;
   toLabel: string;
+  toAddress?: string;
   feeLabel: string;
   timeLabel: string;
   network: string;
+  cluster: ExplorerNetwork;
   signature: string;
   flags: string[];
 };
@@ -58,13 +63,31 @@ export const Route = createFileRoute("/app/explorer")({
 });
 
 function ExplorerPage() {
-  const { connection } = useConnection();
+  const { publicKey } = useWallet();
+  const userId = publicKey?.toBase58() ?? null;
+  const [selectedNetwork, setSelectedNetwork] = useState<ExplorerNetwork>("devnet");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExplorerResult | null>(null);
+  const [contacts, setContacts] = useState<Contact[]>([]);
 
   const queryType = useMemo(() => detectType(query.trim()), [query]);
+  const rpcConnection = useMemo(
+    () => new Connection(clusterApiUrl(selectedNetwork), "confirmed"),
+    [selectedNetwork],
+  );
+
+  useEffect(() => {
+    if (!userId) {
+      setContacts([]);
+      return;
+    }
+
+    listContacts(userId)
+      .then((response) => setContacts(response.contacts))
+      .catch(() => setContacts([]));
+  }, [userId]);
 
   async function handleSearch(e?: React.FormEvent) {
     e?.preventDefault();
@@ -78,7 +101,7 @@ function ExplorerPage() {
     setError(null);
 
     try {
-      const data = await fetchExplorerData(connection, input);
+      const data = await fetchExplorerData(rpcConnection, input, selectedNetwork);
       setResult(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not fetch explorer data.";
@@ -89,8 +112,13 @@ function ExplorerPage() {
     }
   }
 
+  useEffect(() => {
+    setResult(null);
+    setError(null);
+  }, [selectedNetwork]);
+
   return (
-    <div className="px-6 py-8 sm:px-12">
+    <div className="min-h-screen px-6 py-8 sm:px-12">
       <header className="pb-8">
         <h1 className="text-2xl font-medium tracking-tight sm:text-3xl">Explorer</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -98,35 +126,68 @@ function ExplorerPage() {
         </p>
       </header>
 
-      <section className="mx-auto w-full max-w-3xl space-y-6">
+      <section className="w-full space-y-6">
         <form
           onSubmit={(event) => {
             void handleSearch(event);
           }}
-          className="rounded-xl border border-border-subtle bg-surface/60 p-4"
+          className="rounded-2xl border border-border-subtle bg-gradient-to-r from-surface/90 via-surface/70 to-primary/10 p-5 shadow-sm"
         >
-          <label htmlFor="explorer-query" className="block text-xs uppercase tracking-wider text-muted-foreground">
+          <label
+            htmlFor="explorer-query"
+            className="block text-xs uppercase tracking-wider text-muted-foreground"
+          >
             Search
           </label>
-          <div className="mt-2 flex items-center gap-3 border-b border-border-subtle pb-2">
+          <div className="mt-3 flex items-center gap-3 rounded-xl border border-border-subtle bg-background/70 px-3">
             <Search className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             <input
               id="explorer-query"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Enter wallet address or transaction signature..."
-              className="h-10 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
+              className="h-12 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
               autoComplete="off"
               spellCheck={false}
             />
           </div>
 
-          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-            <span>Detected: {query.trim() ? (queryType === "tx" ? "Transaction" : "Wallet") : "Unknown"}</span>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+            <div className="inline-flex items-center gap-2 rounded-full border border-border-subtle bg-background/60 px-3 py-1">
+              <span>
+                Detected: {query.trim() ? (queryType === "tx" ? "Transaction" : "Wallet") : "Unknown"}
+              </span>
+              <span>•</span>
+              <span>{selectedNetwork === "devnet" ? "Devnet" : "Mainnet"}</span>
+            </div>
+            <div className="inline-flex h-11 items-center rounded-xl border border-border-subtle bg-background/70 p-1">
+              <button
+                type="button"
+                onClick={() => setSelectedNetwork("devnet")}
+                className={`h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                  selectedNetwork === "devnet"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Devnet
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedNetwork("mainnet-beta")}
+                className={`h-9 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                  selectedNetwork === "mainnet-beta"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Mainnet
+              </button>
+            </div>
             <button
               type="submit"
               disabled={!query.trim() || loading}
-              className="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-all hover:bg-primary-glow disabled:cursor-not-allowed disabled:bg-muted-foreground/30 disabled:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="h-11 rounded-xl bg-primary px-5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary-glow disabled:cursor-not-allowed disabled:bg-muted-foreground/30 disabled:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {loading ? "Searching..." : "Search"}
             </button>
@@ -139,59 +200,181 @@ function ExplorerPage() {
           </div>
         ) : null}
 
-        {result ? <ExplorerResultView data={result} /> : null}
+        {result ? (
+          <ExplorerResultView
+            data={result}
+            contacts={contacts}
+            userId={userId}
+            onContactsChanged={setContacts}
+          />
+        ) : null}
       </section>
     </div>
   );
 }
 
-function ExplorerResultView({ data }: { data: ExplorerResult }) {
+function ExplorerResultView({
+  data,
+  contacts,
+  userId,
+  onContactsChanged,
+}: {
+  data: ExplorerResult;
+  contacts: Contact[];
+  userId: string | null;
+  onContactsChanged: (next: Contact[]) => void;
+}) {
   if (data.kind === "tx") {
-    return <TxView summary={data.summary} />;
+    return (
+      <TxView
+        summary={data.summary}
+        contacts={contacts}
+        userId={userId}
+        onContactSaved={(saved) => onContactsChanged([saved, ...contacts])}
+      />
+    );
   }
 
   return <WalletView data={data} />;
 }
 
-function TxView({ summary }: { summary: TxSummary }) {
+function TxView({
+  summary,
+  contacts,
+  userId,
+  onContactSaved,
+}: {
+  summary: TxSummary;
+  contacts: Contact[];
+  userId: string | null;
+  onContactSaved: (contact: Contact) => void;
+}) {
+  const [contactName, setContactName] = useState("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const matchedContact = summary.toAddress
+    ? contacts.find((contact) => contact.wallet === summary.toAddress)
+    : undefined;
+
+  const recipientLabel = matchedContact
+    ? `@${matchedContact.name} (${summary.toLabel})`
+    : summary.toLabel;
+
+  async function handleSaveRecipient() {
+    if (!userId || !summary.toAddress) {
+      return;
+    }
+
+    const name = contactName.trim();
+    if (!name) {
+      setSaveError("Enter a contact name.");
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      const response = await createContact(userId, {
+        name,
+        wallet: summary.toAddress,
+      });
+
+      if (!response.contact) {
+        throw new Error("Could not save contact.");
+      }
+
+      onContactSaved(response.contact);
+      setContactName("");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Failed to save contact.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const statusTone =
     summary.status === "success"
-      ? "text-primary"
+      ? "border-primary/40 bg-primary/10 text-primary"
       : summary.status === "pending"
-        ? "text-warning"
-        : "text-destructive";
+        ? "border-warning/40 bg-warning/10 text-warning"
+        : "border-destructive/40 bg-destructive/10 text-destructive";
 
   return (
-    <article className="rounded-xl border border-border-subtle bg-surface/60 p-5">
-      <div className="flex items-start justify-between gap-3">
-        <h2 className="text-base font-medium text-foreground">{summary.headline}</h2>
-        <div className={`text-xs font-medium ${statusTone}`}>{humanStatus(summary.status)}</div>
+    <article className="rounded-2xl border border-border-subtle bg-surface/70 p-6 shadow-sm">
+      <div className="rounded-xl border border-border-subtle bg-gradient-to-br from-primary/15 via-background to-background p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h2 className="text-lg font-medium text-foreground sm:text-xl">{summary.headline}</h2>
+          <div className={`rounded-full border px-3 py-1 text-xs font-medium ${statusTone}`}>
+            {humanStatus(summary.status)}
+          </div>
+        </div>
+        <p className="mt-2 text-sm text-muted-foreground">{summary.timeLabel}</p>
       </div>
 
-      <div className="mt-4 space-y-2 text-sm">
-        <DetailRow label="Amount" value={summary.amountLabel} mono />
-        <DetailRow label="Value" value={summary.valueInrLabel} mono />
-        <DetailRow label="From" value={summary.fromLabel} />
-        <DetailRow label="To" value={summary.toLabel} />
-        <DetailRow label="Fee" value={summary.feeLabel} mono />
-        <DetailRow label="Time" value={summary.timeLabel} />
-        <DetailRow label="Network" value={summary.network} />
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <DetailBlock label="Amount" value={summary.amountLabel} mono />
+        <DetailBlock label="Value" value={summary.valueInrLabel} mono tone="emerald" />
+        <DetailBlock label="Fee" value={summary.feeLabel} mono />
+        <DetailBlock label="Network" value={summary.network} />
       </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <DetailBlock label="From" value={summary.fromLabel} />
+        <DetailBlock label="To" value={recipientLabel} tone="blue" />
+      </div>
+
+      {summary.toAddress ? (
+        matchedContact ? (
+          <div className="mt-4 rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm text-primary">
+            Contact recognized: @{matchedContact.name}
+            <div className="mt-1 font-mono text-xs text-muted-foreground">{summary.toAddress}</div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-border-subtle bg-background/70 p-4">
+            <div className="text-sm text-foreground">Recipient not in your contacts.</div>
+            <div className="mt-1 font-mono text-xs text-muted-foreground">{summary.toAddress}</div>
+            {userId ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  value={contactName}
+                  onChange={(event) => setContactName(event.target.value)}
+                  placeholder="Save as name (e.g. pooja)"
+                  className="h-10 min-w-[220px] rounded-md border border-border bg-surface px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSaveRecipient()}
+                  disabled={isSaving}
+                  className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-glow disabled:cursor-not-allowed disabled:bg-muted-foreground/30 disabled:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  {isSaving ? "Saving..." : "Save to contacts"}
+                </button>
+              </div>
+            ) : (
+              <div className="mt-2 text-xs text-muted-foreground">Connect wallet to save this address to contacts.</div>
+            )}
+            {saveError ? <div className="mt-2 text-xs text-destructive">{saveError}</div> : null}
+          </div>
+        )
+      ) : null}
 
       {summary.flags.length > 0 ? (
-        <div className="mt-4 space-y-1.5">
+        <div className="mt-4 rounded-xl border border-warning/30 bg-warning/10 p-4">
+          <div className="text-xs uppercase tracking-wider text-warning">Smart Insights</div>
           {summary.flags.map((flag) => (
-            <p key={flag} className="text-xs text-warning">
-              {flag}
+            <p key={flag} className="mt-2 text-sm text-warning">
+              ⚠ {flag}
             </p>
           ))}
         </div>
       ) : null}
 
-      <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="mt-4 flex items-center gap-2 rounded-xl border border-border-subtle bg-background/70 px-4 py-3 text-xs text-muted-foreground">
         <span className="uppercase tracking-wider">Txn</span>
         <a
-          href={`https://explorer.solana.com/tx/${summary.signature}?cluster=devnet`}
+          href={explorerTxUrl(summary.signature, summary.cluster)}
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary-glow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -206,30 +389,42 @@ function TxView({ summary }: { summary: TxSummary }) {
 
 function WalletView({ data }: { data: Extract<ExplorerResult, { kind: "wallet" }> }) {
   return (
-    <article className="rounded-xl border border-border-subtle bg-surface/60 p-5">
-      <h2 className="text-base font-medium text-foreground">Wallet Overview</h2>
-
-      <div className="mt-4 space-y-2 text-sm">
-        <DetailRow label="Balance" value={`${formatNumber(data.balanceSol)} SOL (${formatInr(data.balanceSol * INR_RATES.SOL)})`} mono />
+    <article className="rounded-2xl border border-border-subtle bg-surface/70 p-6 shadow-sm">
+      <div className="rounded-xl border border-border-subtle bg-gradient-to-br from-blue-500/15 via-background to-background p-5">
+        <h2 className="text-lg font-medium text-foreground">Wallet Overview</h2>
+        <p className="mt-2 font-mono text-2xl text-foreground">{formatNumber(data.balanceSol)} SOL</p>
+        <p className="mt-1 text-sm text-emerald-400">{formatInr(data.balanceSol * INR_RATES.SOL)}</p>
       </div>
 
       <div className="mt-6">
         <h3 className="text-xs uppercase tracking-wider text-muted-foreground">Recent Activity</h3>
-        <ul className="mt-3 space-y-2">
+        <ul className="mt-3 grid gap-3 sm:grid-cols-2">
           {data.recent.length === 0 ? (
             <li className="text-sm text-muted-foreground">No recent transactions found.</li>
           ) : (
             data.recent.map((item) => (
-              <li key={item.signature} className="rounded-lg border border-border-subtle bg-background/60 p-3">
+              <li key={item.signature} className="rounded-xl border border-border-subtle bg-background/70 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm text-foreground">{item.label}</p>
-                  <span className="text-xs text-muted-foreground">{item.timeLabel}</span>
+                  <span className="rounded-full border border-border-subtle bg-surface px-2 py-0.5 text-xs text-muted-foreground">
+                    {item.timeLabel}
+                  </span>
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{humanStatus(item.status)}</span>
+                  <span
+                    className={
+                      item.status === "success"
+                        ? "text-primary"
+                        : item.status === "pending"
+                          ? "text-warning"
+                          : "text-destructive"
+                    }
+                  >
+                    {humanStatus(item.status)}
+                  </span>
                   <span>•</span>
                   <a
-                    href={`https://explorer.solana.com/tx/${item.signature}?cluster=devnet`}
+                    href={explorerTxUrl(item.signature, data.network)}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-primary transition-colors hover:text-primary-glow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -246,11 +441,23 @@ function WalletView({ data }: { data: Extract<ExplorerResult, { kind: "wallet" }
   );
 }
 
-function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function DetailBlock({
+  label,
+  value,
+  mono,
+  tone,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  tone?: "emerald" | "blue";
+}) {
+  const toneClass = tone === "emerald" ? "border-emerald-400/20 bg-emerald-400/10" : tone === "blue" ? "border-blue-400/20 bg-blue-400/10" : "border-border-subtle bg-background/60";
+
   return (
-    <div className="flex items-baseline gap-5">
-      <span className="w-20 text-xs uppercase tracking-wider text-muted-foreground">{label}</span>
-      <span className={`${mono ? "font-mono" : ""} text-foreground`}>{value}</span>
+    <div className={`rounded-xl border p-4 ${toneClass}`}>
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className={`mt-2 text-sm text-foreground ${mono ? "font-mono" : ""}`}>{value}</div>
     </div>
   );
 }
@@ -263,7 +470,11 @@ function detectType(input: string): QueryType {
   return "wallet";
 }
 
-async function fetchExplorerData(connection: ReturnType<typeof useConnection>["connection"], input: string): Promise<ExplorerResult> {
+async function fetchExplorerData(
+  connection: Connection,
+  input: string,
+  network: ExplorerNetwork,
+): Promise<ExplorerResult> {
   const type = detectType(input);
 
   if (type === "tx") {
@@ -273,12 +484,14 @@ async function fetchExplorerData(connection: ReturnType<typeof useConnection>["c
     });
 
     if (!tx) {
-      throw new Error("Transaction not found on devnet.");
+      throw new Error(
+        `Transaction not found on ${network === "devnet" ? "devnet" : "mainnet"}.`,
+      );
     }
 
     return {
       kind: "tx",
-      summary: toTxSummary(tx, input),
+      summary: toTxSummary(tx, input, network),
     };
   }
 
@@ -292,6 +505,7 @@ async function fetchExplorerData(connection: ReturnType<typeof useConnection>["c
     kind: "wallet",
     address: address.toBase58(),
     balanceSol: lamports / LAMPORTS_PER_SOL,
+    network,
     recent: signatures.map((s) => ({
       signature: s.signature,
       label: s.err ? "Transaction failed" : "Transaction confirmed",
@@ -302,8 +516,9 @@ async function fetchExplorerData(connection: ReturnType<typeof useConnection>["c
 }
 
 function toTxSummary(
-  tx: Awaited<ReturnType<ReturnType<typeof useConnection>["connection"]["getParsedTransaction"]>>,
+  tx: Awaited<ReturnType<Connection["getParsedTransaction"]>>,
   signature: string,
+  network: ExplorerNetwork,
 ): TxSummary {
   if (!tx) {
     throw new Error("Missing transaction data.");
@@ -321,9 +536,11 @@ function toTxSummary(
       valueInrLabel: "Unknown",
       fromLabel: short(signature, 4),
       toLabel: "Unknown",
+      toAddress: undefined,
       feeLabel: `${feeSol.toFixed(6)} SOL`,
       timeLabel: tx.blockTime ? timeAgo(tx.blockTime * 1000) : "unknown time",
-      network: "Solana Devnet",
+      network: `Solana ${network === "devnet" ? "Devnet" : "Mainnet"}`,
+      cluster: network,
       signature,
       flags: ["Could not map this transaction to a simple transfer summary"],
     };
@@ -344,16 +561,18 @@ function toTxSummary(
     valueInrLabel: formatInr(amountInr),
     fromLabel: short(transfer.from, 4),
     toLabel: short(transfer.to, 4),
+    toAddress: transfer.to,
     feeLabel: `${feeSol.toFixed(6)} SOL`,
     timeLabel: tx.blockTime ? timeAgo(tx.blockTime * 1000) : "unknown time",
-    network: "Solana Devnet",
+    network: `Solana ${network === "devnet" ? "Devnet" : "Mainnet"}`,
+    cluster: network,
     signature,
     flags,
   };
 }
 
 function extractTransfer(
-  tx: Awaited<ReturnType<ReturnType<typeof useConnection>["connection"]["getParsedTransaction"]>>,
+  tx: Awaited<ReturnType<Connection["getParsedTransaction"]>>,
 ): { from: string; to: string; amount: number } | null {
   if (!tx) {
     return null;
@@ -434,4 +653,12 @@ function timeAgo(timestampMs: number) {
 
   const days = Math.floor(hours / 24);
   return `${days} day ago`;
+}
+
+function explorerTxUrl(signature: string, network: ExplorerNetwork) {
+  if (network === "mainnet-beta") {
+    return `https://explorer.solana.com/tx/${signature}`;
+  }
+
+  return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { Mic, ArrowUp, ExternalLink, MicOff } from "lucide-react";
+import { Mic, ArrowUp, ExternalLink, MicOff, Copy, Check } from "lucide-react";
 import {
   createContact,
   resolveRecipient,
@@ -678,6 +678,14 @@ function BroadcastingBlock() {
 }
 
 function SuccessBlock({ tx, hash, onDone }: { tx: ParsedTx; hash: string; onDone: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copySignature() {
+    await navigator.clipboard.writeText(hash);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
   return (
     <div className="animate-enter animate-success rounded-xl border border-primary/30 bg-surface/50 p-5">
       <div className="text-sm font-medium text-primary">✓ Sent successfully</div>
@@ -698,6 +706,21 @@ function SuccessBlock({ tx, hash, onDone }: { tx: ParsedTx; hash: string; onDone
         >
           View on explorer <ExternalLink className="h-3 w-3" />
         </a>
+        <button
+          type="button"
+          onClick={() => void copySignature()}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {copied ? (
+            <>
+              Copied <Check className="h-3 w-3 text-primary" />
+            </>
+          ) : (
+            <>
+              Copy Txn Hash <Copy className="h-3 w-3" />
+            </>
+          )}
+        </button>
         <button
           onClick={onDone}
           className="text-xs text-muted-foreground transition-colors hover:text-foreground"
