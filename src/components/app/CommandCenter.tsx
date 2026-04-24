@@ -641,6 +641,7 @@ function ReviewBlock({
           </>
         )}
         <Row label="Network" value="Solana" />
+        <Row label="Cluster" value="Devnet" />
         <Row label="Fee" mono value="0.000005 SOL" />
       </div>
 

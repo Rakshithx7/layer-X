@@ -1,11 +1,12 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, ArrowLeftRight, User, Settings } from "lucide-react";
+import { LayoutDashboard, ArrowLeftRight, Compass, User, Settings } from "lucide-react";
 import { ContextPanel } from "./ContextPanel";
 import { WalletConnector } from "./WalletConnector";
 
 const NAV = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/app/transactions", label: "Transactions", icon: ArrowLeftRight, exact: false },
+  { to: "/app/explorer", label: "Explorer", icon: Compass, exact: false },
   { to: "/app/identity", label: "Identity", icon: User, exact: false },
   { to: "/app/settings", label: "Settings", icon: Settings, exact: false },
 ] as const;

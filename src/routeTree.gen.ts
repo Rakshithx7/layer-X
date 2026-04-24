@@ -15,6 +15,7 @@ import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppTransactionsRouteImport } from './routes/app.transactions'
 import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppIdentityRouteImport } from './routes/app.identity'
+import { Route as AppExplorerRouteImport } from './routes/app.explorer'
 
 const AppRoute = AppRouteImport.update({
   id: '/app',
@@ -46,10 +47,16 @@ const AppIdentityRoute = AppIdentityRouteImport.update({
   path: '/identity',
   getParentRoute: () => AppRoute,
 } as any)
+const AppExplorerRoute = AppExplorerRouteImport.update({
+  id: '/explorer',
+  path: '/explorer',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/explorer': typeof AppExplorerRoute
   '/app/identity': typeof AppIdentityRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/transactions': typeof AppTransactionsRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/app/explorer': typeof AppExplorerRoute
   '/app/identity': typeof AppIdentityRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/transactions': typeof AppTransactionsRoute
@@ -66,6 +74,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/explorer': typeof AppExplorerRoute
   '/app/identity': typeof AppIdentityRoute
   '/app/settings': typeof AppSettingsRoute
   '/app/transactions': typeof AppTransactionsRoute
@@ -76,16 +85,24 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/app/explorer'
     | '/app/identity'
     | '/app/settings'
     | '/app/transactions'
     | '/app/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app/identity' | '/app/settings' | '/app/transactions' | '/app'
+  to:
+    | '/'
+    | '/app/explorer'
+    | '/app/identity'
+    | '/app/settings'
+    | '/app/transactions'
+    | '/app'
   id:
     | '__root__'
     | '/'
     | '/app'
+    | '/app/explorer'
     | '/app/identity'
     | '/app/settings'
     | '/app/transactions'
@@ -141,10 +158,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIdentityRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/explorer': {
+      id: '/app/explorer'
+      path: '/explorer'
+      fullPath: '/app/explorer'
+      preLoaderRoute: typeof AppExplorerRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppExplorerRoute: typeof AppExplorerRoute
   AppIdentityRoute: typeof AppIdentityRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTransactionsRoute: typeof AppTransactionsRoute
@@ -152,6 +177,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppExplorerRoute: AppExplorerRoute,
   AppIdentityRoute: AppIdentityRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTransactionsRoute: AppTransactionsRoute,
