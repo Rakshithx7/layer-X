@@ -41,7 +41,8 @@ export const Route = createRootRoute({
       { property: "og:title", content: "CryptoChat — Crypto, as simple as texting" },
       {
         property: "og:description",
-        content: "A command-driven crypto interface for Solana. Type what you want, see what will happen, approve.",
+        content:
+          "A command-driven crypto interface for Solana. Type what you want, see what will happen, approve.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

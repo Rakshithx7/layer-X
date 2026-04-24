@@ -1,0 +1,263 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import SpeechRecognition, { useSpeechRecognition as useSR } from "react-speech-recognition";
+
+interface UseSpeechRecognitionOptions {
+  continuous?: boolean;
+  language?: string;
+  interimResults?: boolean;
+  onResult?: (transcript: string, isFinal: boolean) => void;
+  onError?: (error: string) => void;
+}
+
+// Helper function to convert number words to digits for crypto commands
+function normalizeNumbers(text: string): string {
+  if (!text) return text;
+
+  // Common number word mappings for crypto amounts
+  const numberMap: Record<string, string> = {
+    zero: "0",
+    one: "1",
+    two: "2",
+    three: "3",
+    four: "4",
+    five: "5",
+    six: "6",
+    seven: "7",
+    eight: "8",
+    nine: "9",
+    ten: "10",
+    eleven: "11",
+    twelve: "12",
+    thirteen: "13",
+    fourteen: "14",
+    fifteen: "15",
+    sixteen: "16",
+    seventeen: "17",
+    eighteen: "18",
+    nineteen: "19",
+    twenty: "20",
+    thirty: "30",
+    forty: "40",
+    fifty: "50",
+    sixty: "60",
+    seventy: "70",
+    eighty: "80",
+    ninety: "90",
+    hundred: "100",
+  };
+
+  // Also handle digit words like "point five" -> ".5"
+  let normalized = text.toLowerCase();
+
+  // Replace number words with digits
+  Object.entries(numberMap).forEach(([word, digit]) => {
+    const regex = new RegExp(`\\b${word}\\b`, "gi");
+    normalized = normalized.replace(regex, digit);
+  });
+
+  // Fix common crypto-specific misrecognitions
+  normalized = normalized.replace(/\b(sol|soul)\b/gi, "SOL");
+  normalized = normalized.replace(/\b(usdc|u s d c)\b/gi, "USDC");
+  normalized = normalized.replace(/\b(jup|jupiter)\b/gi, "JUP");
+  normalized = normalized.replace(/\b(eth|ethereum)\b/gi, "ETH");
+
+  // Convert "send 1 sol to" -> keep as is (already good)
+  // Convert "send one sol to" -> "send 1 SOL to"
+
+  return normalized;
+}
+
+export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) {
+  const {
+    continuous = true,
+    language = "en-US",
+    interimResults = true,
+    onResult,
+    onError,
+  } = options;
+
+  const [isListening, setIsListening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [browserSupportsSpeech, setBrowserSupportsSpeech] = useState(true);
+  const [finalTranscript, setFinalTranscript] = useState("");
+  const lastProcessedRef = useRef<string>("");
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const {
+    transcript,
+    listening: srListening,
+    resetTranscript,
+    browserSupportsSpeechRecognition,
+    isMicrophoneAvailable,
+  } = useSR({
+    clearTranscriptOnListen: false,
+  });
+
+  // Update isListening state based on speech recognition state
+  useEffect(() => {
+    setIsListening(srListening);
+  }, [srListening]);
+
+  // Check browser support and microphone availability
+  useEffect(() => {
+    if (!browserSupportsSpeechRecognition) {
+      setBrowserSupportsSpeech(false);
+      setError("Your browser does not support speech recognition.");
+      return;
+    }
+
+    if (!isMicrophoneAvailable) {
+      setError(
+        "Microphone access is required for speech recognition. Please grant microphone permission.",
+      );
+      setPermissionDenied(true);
+    } else {
+      setError(null);
+      setPermissionDenied(false);
+    }
+  }, [browserSupportsSpeechRecognition, isMicrophoneAvailable]);
+
+  // Process transcript with debouncing and duplicate detection
+  useEffect(() => {
+    if (!transcript || transcript === lastProcessedRef.current) {
+      return;
+    }
+
+    // Clear any existing debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Debounce to avoid rapid updates
+    debounceTimerRef.current = setTimeout(() => {
+      const normalized = normalizeNumbers(transcript);
+
+      // Check if this is substantially different from last processed
+      if (normalized !== lastProcessedRef.current) {
+        const isFinal =
+          transcript.endsWith(".") || transcript.endsWith("!") || transcript.endsWith("?");
+
+        if (onResult) {
+          onResult(normalized, isFinal);
+        }
+
+        if (isFinal) {
+          setFinalTranscript(normalized);
+        }
+
+        lastProcessedRef.current = normalized;
+      }
+    }, 300); // 300ms debounce
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [transcript, onResult]);
+
+  // Handle errors from speech recognition
+  useEffect(() => {
+    if (onError && error) {
+      onError(error);
+    }
+  }, [error, onError]);
+
+  const requestMicrophonePermission = useCallback(async () => {
+    if (!browserSupportsSpeechRecognition) {
+      setError("Speech recognition is not supported in this browser.");
+      return false;
+    }
+
+    try {
+      await SpeechRecognition.startListening({
+        continuous: false,
+        language,
+        interimResults: false,
+      });
+      await SpeechRecognition.stopListening();
+      setError(null);
+      setPermissionDenied(false);
+      return true;
+    } catch (err) {
+      setError("Failed to access microphone. Please check your browser permissions.");
+      setPermissionDenied(true);
+      return false;
+    }
+  }, [browserSupportsSpeechRecognition, language]);
+
+  const startListening = useCallback(async () => {
+    if (!browserSupportsSpeechRecognition) {
+      setError("Speech recognition is not supported in this browser.");
+      return;
+    }
+
+    if (!isMicrophoneAvailable) {
+      setError("Microphone access is required. Please grant permission to use speech recognition.");
+      setPermissionDenied(true);
+
+      const granted = await requestMicrophonePermission();
+      if (!granted) {
+        return;
+      }
+    }
+
+    setError(null);
+    setPermissionDenied(false);
+    resetTranscript();
+    setFinalTranscript("");
+    lastProcessedRef.current = "";
+
+    try {
+      SpeechRecognition.startListening({
+        continuous,
+        language,
+        interimResults,
+      });
+    } catch (err) {
+      setError("Failed to start speech recognition. Please try again.");
+      console.error("Speech recognition error:", err);
+    }
+  }, [
+    browserSupportsSpeechRecognition,
+    isMicrophoneAvailable,
+    continuous,
+    language,
+    interimResults,
+    requestMicrophonePermission,
+    resetTranscript,
+  ]);
+
+  const stopListening = useCallback(() => {
+    SpeechRecognition.stopListening();
+    // Send final transcript when stopping
+    if (transcript && onResult) {
+      const normalized = normalizeNumbers(transcript);
+      onResult(normalized, true);
+    }
+  }, [transcript, onResult]);
+
+  const toggleListening = useCallback(async () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      await startListening();
+    }
+  }, [isListening, startListening, stopListening]);
+
+  return {
+    transcript,
+    finalTranscript,
+    isListening,
+    error,
+    permissionDenied,
+    browserSupportsSpeech,
+    isMicrophoneAvailable,
+    startListening,
+    stopListening,
+    toggleListening,
+    resetTranscript,
+    requestMicrophonePermission,
+  };
+}

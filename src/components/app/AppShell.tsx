@@ -40,9 +40,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
                   <Link
                     to={item.to}
                     className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
-                      active
-                        ? "text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
+                      active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     <Icon className="h-4 w-4" />
@@ -64,9 +62,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       </aside>
 
       {/* Center */}
-      <main className="flex-1 min-w-0 animate-enter">
-        {children ?? <Outlet />}
-      </main>
+      <main className="flex-1 min-w-0 animate-enter">{children ?? <Outlet />}</main>
 
       {/* Right context panel */}
       <ContextPanel />

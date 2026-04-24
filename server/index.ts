@@ -9,6 +9,7 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: resolve(__dirname, "../.env.local") });
 
 import http from "node:http";
+import { DeepgramClient } from "@deepgram/sdk";
 import { MongoServerError, ObjectId } from "mongodb";
 import { PublicKey } from "@solana/web3.js";
 import { ensureIndexes, getCollections, isMongoConfigured } from "./mongo";
@@ -76,7 +77,7 @@ function toApiContact(doc: ContactDoc): ApiContact {
   };
 }
 
-async function ensureUserRecord(userId: string, users: any) {
+async function ensureUserRecord(userId: string, users: import("mongodb").Collection<any>) {
   if (!isValidSolanaAddress(userId)) {
     throw new Error("Invalid userId");
   }
@@ -97,7 +98,7 @@ async function ensureUserRecord(userId: string, users: any) {
         updatedAt: now,
       },
     },
-    { upsert: true }
+    { upsert: true },
   );
 }
 
@@ -172,7 +173,12 @@ async function main() {
           $or: [{ nameNormalized: normalizedName }, { walletNormalized: normalizedWallet }],
         });
         if (duplicate) {
-          return sendError(res, 409, "Contact already exists", "A contact with this name or wallet already exists.");
+          return sendError(
+            res,
+            409,
+            "Contact already exists",
+            "A contact with this name or wallet already exists.",
+          );
         }
 
         const doc = {
@@ -190,7 +196,12 @@ async function main() {
           await contacts.insertOne(doc);
         } catch (error) {
           if (error instanceof MongoServerError && error.code === 11000) {
-            return sendError(res, 409, "Contact already exists", "A contact with this name or wallet already exists.");
+            return sendError(
+              res,
+              409,
+              "Contact already exists",
+              "A contact with this name or wallet already exists.",
+            );
           }
           throw error;
         }
@@ -200,7 +211,7 @@ async function main() {
           name: doc.name,
           wallet: doc.wallet,
         });
-        return sendJson(res, 201, { contact: toApiContact(doc as any) });
+        return sendJson(res, 201, { contact: toApiContact(doc) });
       }
 
       // UPDATE CONTACT
@@ -210,9 +221,11 @@ async function main() {
           return sendError(res, 400, "Invalid contact id");
         }
 
-        const body = (await readJsonBody(req)) as
-          | { userId?: string; name?: string; wallet?: string }
-          | null;
+        const body = (await readJsonBody(req)) as {
+          userId?: string;
+          name?: string;
+          wallet?: string;
+        } | null;
         const userId = body?.userId?.trim() ?? "";
 
         if (!isValidSolanaAddress(userId)) {
@@ -274,13 +287,47 @@ async function main() {
           await contacts.updateOne({ _id: existing._id, userId }, { $set: updates });
         } catch (error) {
           if (error instanceof MongoServerError && error.code === 11000) {
-            return sendError(res, 409, "Contact already exists", "A contact with this name or wallet already exists.");
+            return sendError(
+              res,
+              409,
+              "Contact already exists",
+              "A contact with this name or wallet already exists.",
+            );
           }
           throw error;
         }
 
         const updated = await contacts.findOne({ _id: existing._id, userId });
         return sendJson(res, 200, { contact: updated ? toApiContact(updated) : null });
+      }
+
+      // DEEPGRAM TOKEN
+      if (url.pathname === "/speech-token" && req.method === "GET") {
+        if (!process.env.DEEPGRAM_API_KEY) {
+          return sendError(res, 500, "Deepgram API key not configured");
+        }
+
+        try {
+          const deepgram = new DeepgramClient({ apiKey: process.env.DEEPGRAM_API_KEY });
+          // Create a temporary key valid for 10 minutes
+          const result = (await deepgram.manage.v1.projects.keys.create(
+            process.env.DEEPGRAM_PROJECT_ID!,
+            {
+              comment: "Temporary speech recognition token",
+              scopes: ["usage:write"],
+              time_to_live_in_seconds: 600,
+            } as unknown,
+          )) as unknown as { key: string };
+
+          if (!result.key) {
+            throw new Error("Missing key in response");
+          }
+
+          return sendJson(res, 200, { key: result.key });
+        } catch (err: unknown) {
+          console.error("Deepgram key generation exception:", err);
+          return sendError(res, 500, "Failed to generate speech token", err.message);
+        }
       }
 
       // DELETE CONTACT
@@ -355,15 +402,20 @@ async function main() {
       }
 
       return sendError(res, 404, "Route not found");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[request] failed", {
         method: req.method,
         path: url.pathname,
         search: url.search,
-        message: err?.message,
-        stack: err?.stack,
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
       });
-      return sendError(res, 500, "Internal server error", err?.message);
+      return sendError(
+        res,
+        500,
+        "Internal server error",
+        err instanceof Error ? err.message : undefined,
+      );
     }
   });
 

@@ -38,7 +38,9 @@ function initialDraft(contact?: Contact): Draft {
 
 function ContactSkeleton({ compact }: { compact?: boolean }) {
   return (
-    <div className={`animate-pulse rounded-lg border border-border/60 bg-surface/60 ${compact ? "p-3" : "p-4"}`}>
+    <div
+      className={`animate-pulse rounded-lg border border-border/60 bg-surface/60 ${compact ? "p-3" : "p-4"}`}
+    >
       <div className="h-4 w-24 rounded bg-border/70" />
       <div className="mt-2 h-3 w-full rounded bg-border/60" />
       <div className="mt-3 h-8 w-24 rounded bg-border/60" />
@@ -85,7 +87,10 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
   const [editingSaving, setEditingSaving] = useState(false);
 
   const hasContacts = contacts.length > 0;
-  const visibleContacts = useMemo(() => (compact ? contacts.slice(0, 4) : contacts), [compact, contacts]);
+  const visibleContacts = useMemo(
+    () => (compact ? contacts.slice(0, 4) : contacts),
+    [compact, contacts],
+  );
 
   useEffect(() => {
     if (!userId) {
@@ -149,7 +154,7 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
     try {
       const response = await createContact(userId, { name, wallet });
       if (response.contact) {
-        setContacts((current) => [response.contact, ...current]);
+        setContacts((current) => [response.contact!, ...current]);
       }
       setNewDraft({ name: "", wallet: "" });
       setShowForm(false);
@@ -191,7 +196,9 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
       cancelEdit();
       toast.success(`Updated @${name}`);
     } catch (requestError) {
-      toast.error(requestError instanceof Error ? requestError.message : "Failed to update contact");
+      toast.error(
+        requestError instanceof Error ? requestError.message : "Failed to update contact",
+      );
     } finally {
       setEditingSaving(false);
     }
@@ -213,12 +220,16 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
       setContacts((current) => current.filter((contact) => contact.id !== contactId));
       toast.success(`Deleted @${contactName}`);
     } catch (requestError) {
-      toast.error(requestError instanceof Error ? requestError.message : "Failed to delete contact");
+      toast.error(
+        requestError instanceof Error ? requestError.message : "Failed to delete contact",
+      );
     }
   }
 
   const wrapperClassName = compact ? "space-y-4" : "space-y-6";
-  const titleClassName = compact ? "text-sm font-medium text-foreground" : "text-base font-medium text-foreground";
+  const titleClassName = compact
+    ? "text-sm font-medium text-foreground"
+    : "text-base font-medium text-foreground";
 
   if (!userId) {
     return (
@@ -251,7 +262,10 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="space-y-3 rounded-lg border border-border bg-surface/80 p-3">
+        <form
+          onSubmit={handleCreate}
+          className="space-y-3 rounded-lg border border-border bg-surface/80 p-3"
+        >
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground" htmlFor="contact-name">
               Name
@@ -259,7 +273,9 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
             <input
               id="contact-name"
               value={newDraft.name}
-              onChange={(event) => setNewDraft((current) => ({ ...current, name: event.target.value }))}
+              onChange={(event) =>
+                setNewDraft((current) => ({ ...current, name: event.target.value }))
+              }
               placeholder="pooja"
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             />
@@ -271,7 +287,9 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
             <input
               id="contact-wallet"
               value={newDraft.wallet}
-              onChange={(event) => setNewDraft((current) => ({ ...current, wallet: event.target.value }))}
+              onChange={(event) =>
+                setNewDraft((current) => ({ ...current, wallet: event.target.value }))
+              }
               placeholder="7YxQzK9p..."
               className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-foreground outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             />
@@ -323,11 +341,17 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
             const editing = editingId === contact.id;
 
             return (
-              <div key={contact.id} className="rounded-lg border border-border/70 bg-surface/70 p-3">
+              <div
+                key={contact.id}
+                className="rounded-lg border border-border/70 bg-surface/70 p-3"
+              >
                 {editing ? (
                   <div className="space-y-3">
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground" htmlFor={`contact-name-${contact.id}`}>
+                      <label
+                        className="text-xs text-muted-foreground"
+                        htmlFor={`contact-name-${contact.id}`}
+                      >
                         Name
                       </label>
                       <input
@@ -340,7 +364,10 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground" htmlFor={`contact-wallet-${contact.id}`}>
+                      <label
+                        className="text-xs text-muted-foreground"
+                        htmlFor={`contact-wallet-${contact.id}`}
+                      >
                         Wallet
                       </label>
                       <input
@@ -376,10 +403,15 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 space-y-1">
                       <div className="font-medium text-foreground">@{contact.name}</div>
-                      <div className="font-mono text-xs text-muted-foreground">{truncateWallet(contact.wallet)}</div>
+                      <div className="font-mono text-xs text-muted-foreground">
+                        {truncateWallet(contact.wallet)}
+                      </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
-                      <ActionButton label={`Edit ${contact.name}`} onClick={() => startEdit(contact)}>
+                      <ActionButton
+                        label={`Edit ${contact.name}`}
+                        onClick={() => startEdit(contact)}
+                      >
                         <PencilLine className="h-3.5 w-3.5" />
                       </ActionButton>
                       <ActionButton
@@ -397,7 +429,9 @@ export function ContactsManager({ userId, compact = false }: ContactsManagerProp
           })}
 
           {compact && contacts.length > visibleContacts.length && (
-            <p className="text-xs text-muted-foreground">+{contacts.length - visibleContacts.length} more saved contacts</p>
+            <p className="text-xs text-muted-foreground">
+              +{contacts.length - visibleContacts.length} more saved contacts
+            </p>
           )}
         </div>
       ) : (

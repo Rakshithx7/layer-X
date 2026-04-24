@@ -115,7 +115,9 @@ export async function deleteContact(userId: string, contactId: string) {
 
 export async function resolveRecipient(userId: string, query: string) {
   const response = await fetch(
-    buildUrl(`/contacts/resolve?userId=${encodeURIComponent(userId)}&query=${encodeURIComponent(query)}`),
+    buildUrl(
+      `/contacts/resolve?userId=${encodeURIComponent(userId)}&query=${encodeURIComponent(query)}`,
+    ),
   );
 
   const payload = await response.json().catch(() => null);

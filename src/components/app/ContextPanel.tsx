@@ -23,9 +23,7 @@ export function ContextPanel() {
     <aside className="hidden w-[300px] shrink-0 flex-col gap-12 px-8 py-8 lg:flex">
       {/* Wallet */}
       <section>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">
-          Total Balance
-        </div>
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Total Balance</div>
         <div className="mt-2 font-mono text-3xl font-medium tracking-tight text-foreground">
           ₹1,25,430.50
         </div>
@@ -52,7 +50,11 @@ export function ContextPanel() {
       <section className="space-y-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground">Portfolio</div>
         <div className="text-lg font-semibold tracking-tight text-foreground">
-          ₹{portfolioTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          ₹
+          {portfolioTotal.toLocaleString("en-IN", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
         </div>
         <div className="space-y-3">
           {PORTFOLIO_TOKENS.map((token) => (
@@ -63,7 +65,11 @@ export function ContextPanel() {
               <div className="font-medium text-foreground">{token.symbol}</div>
               <div className="flex items-center gap-3">
                 <span className="font-mono text-xs text-muted-foreground">
-                  ₹{token.value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ₹
+                  {token.value.toLocaleString("en-IN", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
                 </span>
                 <span
                   className={`text-xs font-medium ${
@@ -83,7 +89,9 @@ export function ContextPanel() {
         </div>
         <div className="pt-2 text-xs text-muted-foreground">Updated just now</div>
         <div className="font-mono text-[11px] text-muted-foreground/80">
-          {userId ? `${userId.slice(0, 4)}...${userId.slice(-4)}` : "Connect wallet to load identity"}
+          {userId
+            ? `${userId.slice(0, 4)}...${userId.slice(-4)}`
+            : "Connect wallet to load identity"}
         </div>
       </section>
     </aside>

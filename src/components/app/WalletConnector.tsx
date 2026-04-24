@@ -66,7 +66,11 @@ export function WalletConnector() {
           <DropdownMenuItem
             onClick={() => {
               if (address) {
-                window.open(`https://explorer.solana.com/address/${address}?cluster=devnet`, "_blank", "noreferrer");
+                window.open(
+                  `https://explorer.solana.com/address/${address}?cluster=devnet`,
+                  "_blank",
+                  "noreferrer",
+                );
               }
             }}
           >

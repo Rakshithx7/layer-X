@@ -39,7 +39,9 @@ function IdentityPage() {
       <div className="max-w-xl space-y-12">
         <section>
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Identity</div>
-          <div className="mt-2 text-sm text-muted-foreground">Your wallet public key is your user identity.</div>
+          <div className="mt-2 text-sm text-muted-foreground">
+            Your wallet public key is your user identity.
+          </div>
           <div className="mt-3 flex items-center gap-3">
             <div className="break-all font-mono text-base text-foreground">
               {address || "Connect a wallet to view your public key."}

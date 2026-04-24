@@ -13,7 +13,8 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "CryptoChat — Crypto, as simple as texting" },
       {
         property: "og:description",
-        content: "Type what you want, see what will happen, approve. A command-driven crypto interface for Solana.",
+        content:
+          "Type what you want, see what will happen, approve. A command-driven crypto interface for Solana.",
       },
     ],
   }),
@@ -33,10 +34,7 @@ function LandingPage() {
           <a href="#features" className="transition-colors hover:text-foreground">
             Features
           </a>
-          <Link
-            to="/app"
-            className="text-foreground transition-colors hover:text-primary-glow"
-          >
+          <Link to="/app" className="text-foreground transition-colors hover:text-primary-glow">
             Launch App →
           </Link>
         </nav>
@@ -51,7 +49,8 @@ function LandingPage() {
               Crypto, but as simple as texting.
             </h1>
             <p className="mt-6 max-w-md text-base text-muted-foreground sm:text-lg">
-              Send, swap, and manage crypto using plain English. No wallet complexity, no jargon — just commands.
+              Send, swap, and manage crypto using plain English. No wallet complexity, no jargon —
+              just commands.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3">
               <Link
@@ -101,7 +100,7 @@ function LandingPage() {
       </section>
 
       {/* Final CTA */}
-      
+
       <section className="mx-auto max-w-6xl px-6 py-24">
         <Link
           to="/app"
