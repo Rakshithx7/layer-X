@@ -1,5 +1,6 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { SolanaWalletProvider } from "@/components/app/SolanaWalletProvider";
+import { Toaster } from "@/components/ui/sonner";
 
 import appCss from "../styles.css?url";
 
@@ -78,6 +79,7 @@ function RootComponent() {
   return (
     <SolanaWalletProvider>
       <Outlet />
+      <Toaster />
     </SolanaWalletProvider>
   );
 }

@@ -1,4 +1,6 @@
 import { Link } from "@tanstack/react-router";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { ContactsManager } from "./ContactsManager";
 
 const TOKENS = [
   { symbol: "SOL", value: "₹98,420.10" },
@@ -7,6 +9,9 @@ const TOKENS = [
 ];
 
 export function ContextPanel() {
+  const { publicKey } = useWallet();
+  const userId = publicKey?.toBase58() ?? null;
+
   return (
     <aside className="hidden w-[300px] shrink-0 flex-col gap-12 px-8 py-8 lg:flex">
       {/* Wallet */}
@@ -37,15 +42,20 @@ export function ContextPanel() {
       </section>
 
       {/* Identity */}
-      <section>
+      <section className="space-y-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground">Identity</div>
-        <div className="mt-3 text-sm font-medium text-foreground">@prajwal</div>
-        <div className="mt-1 font-mono text-xs text-muted-foreground">7Yx…abc123</div>
+        <div className="space-y-1 text-sm">
+          <div className="font-medium text-foreground">Wallet public key</div>
+          <div className="font-mono text-xs text-muted-foreground">
+            {userId ? `${userId.slice(0, 4)}...${userId.slice(-4)}` : "Connect wallet to load identity"}
+          </div>
+        </div>
+        <ContactsManager userId={userId} compact />
         <Link
           to="/app/identity"
-          className="mt-2 inline-block text-xs text-primary transition-colors hover:text-primary-glow"
+          className="inline-block text-xs text-primary transition-colors hover:text-primary-glow"
         >
-          Edit
+          Open full identity page
         </Link>
       </section>
     </aside>

@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { Mic, ArrowUp, ExternalLink } from "lucide-react";
+import { createContact, resolveRecipient, isValidSolanaAddress } from "@/lib/contacts";
 
 type ParsedTx =
   | {
       kind: "send";
       amount: number;
       token: string;
-      recipient: string;
+      recipientName: string;
+      recipientLabel: string;
+      recipientWallet: string;
+      recipientSource: "contact" | "username" | "wallet";
     }
   | {
       kind: "swap";
@@ -19,7 +25,8 @@ type FlowState =
   | { phase: "idle" }
   | { phase: "review"; tx: ParsedTx }
   | { phase: "broadcasting"; tx: ParsedTx }
-  | { phase: "success"; tx: ParsedTx; hash: string };
+  | { phase: "success"; tx: ParsedTx; hash: string }
+  | { phase: "missing-contact"; tx: Extract<ParsedTx, { kind: "send" }>; walletDraft: string; saving: boolean; error?: string };
 
 type LogEntry =
   | { id: string; type: "user"; text: string }
@@ -41,7 +48,10 @@ function parseCommand(input: string): ParsedTx | null {
       kind: "send",
       amount: parseFloat(send[1]),
       token: send[2].toUpperCase(),
-      recipient: send[3],
+      recipientName: send[3],
+      recipientLabel: send[3],
+      recipientWallet: "",
+      recipientSource: "contact",
     };
   }
   const swap = input
@@ -69,7 +79,17 @@ function randomHash() {
   return `0x${s}`;
 }
 
+function truncateAddress(address: string, chars = 4) {
+  if (address.length <= chars * 2 + 3) {
+    return address;
+  }
+
+  return `${address.slice(0, chars)}...${address.slice(-chars)}`;
+}
+
 export function CommandCenter() {
+  const { publicKey, connected } = useWallet();
+  const userId = publicKey?.toBase58() ?? null;
   const [input, setInput] = useState("");
   const [log, setLog] = useState<LogEntry[]>([]);
   const [flow, setFlow] = useState<FlowState>({ phase: "idle" });
@@ -86,7 +106,7 @@ export function CommandCenter() {
     setLog((l) => [...l, { id: crypto.randomUUID(), type: "system", text }]);
   }
 
-  function handleSubmit(e?: React.FormEvent) {
+  async function handleSubmit(e?: FormEvent) {
     e?.preventDefault();
     const text = input.trim();
     if (!text || flow.phase === "broadcasting") return;
@@ -99,7 +119,69 @@ export function CommandCenter() {
       );
       return;
     }
-    setFlow({ phase: "review", tx: parsed });
+
+    if (parsed.kind === "swap") {
+      setFlow({ phase: "review", tx: parsed });
+      return;
+    }
+
+    if (!connected || !userId) {
+      appendSystem("Connect your wallet first so I can resolve contacts.");
+      return;
+    }
+
+    try {
+      const resolved = await resolveRecipient(userId, parsed.recipientName);
+
+      if (resolved.matchType === "contact") {
+        setFlow({
+          phase: "review",
+          tx: {
+            ...parsed,
+            recipientLabel: `@${resolved.contact.name}`,
+            recipientWallet: resolved.contact.wallet,
+            recipientSource: "contact",
+          },
+        });
+        return;
+      }
+
+      if (resolved.matchType === "username") {
+        setFlow({
+          phase: "review",
+          tx: {
+            ...parsed,
+            recipientLabel: `@${resolved.username}`,
+            recipientWallet: resolved.wallet,
+            recipientSource: "username",
+          },
+        });
+        return;
+      }
+
+      if (resolved.matchType === "wallet") {
+        setFlow({
+          phase: "review",
+          tx: {
+            ...parsed,
+            recipientLabel: truncateAddress(resolved.wallet),
+            recipientWallet: resolved.wallet,
+            recipientSource: "wallet",
+          },
+        });
+        return;
+      }
+
+      setFlow({
+        phase: "missing-contact",
+        tx: parsed,
+        walletDraft: "",
+        saving: false,
+      });
+      appendSystem(`No contact found for "${parsed.recipientName}". Add a wallet address to continue.`);
+    } catch (requestError) {
+      appendSystem(requestError instanceof Error ? requestError.message : "Could not resolve contact.");
+    }
   }
 
   function handleConfirm() {
@@ -118,6 +200,47 @@ export function CommandCenter() {
 
   function handleReset() {
     setFlow({ phase: "idle" });
+  }
+
+  async function handleSaveMissingContact() {
+    if (flow.phase !== "missing-contact" || !userId) return;
+
+    const wallet = flow.walletDraft.trim();
+    if (!isValidSolanaAddress(wallet)) {
+      setFlow({ ...flow, error: "Enter a valid Solana wallet address." });
+      return;
+    }
+
+    setFlow({ ...flow, saving: true, error: undefined });
+
+    try {
+      const response = await createContact(userId, {
+        name: flow.tx.recipientName,
+        wallet,
+      });
+
+      const saved = response.contact;
+      if (!saved) {
+        throw new Error("Contact could not be saved.");
+      }
+
+      setFlow({
+        phase: "review",
+        tx: {
+          ...flow.tx,
+          recipientLabel: `@${saved.name}`,
+          recipientWallet: saved.wallet,
+          recipientSource: "contact",
+        },
+      });
+      appendSystem(`Saved @${saved.name}. Continuing to review.`);
+    } catch (requestError) {
+      setFlow({
+        ...flow,
+        saving: false,
+        error: requestError instanceof Error ? requestError.message : "Failed to save contact.",
+      });
+    }
   }
 
   return (
@@ -169,6 +292,19 @@ export function CommandCenter() {
         {flow.phase === "success" && (
           <SuccessBlock tx={flow.tx} hash={flow.hash} onDone={handleReset} />
         )}
+        {flow.phase === "missing-contact" && (
+          <MissingContactBlock
+            tx={flow.tx}
+            walletDraft={flow.walletDraft}
+            saving={flow.saving}
+            error={flow.error}
+            onWalletDraftChange={(walletDraft) =>
+              setFlow({ ...flow, walletDraft, error: undefined })
+            }
+            onSave={() => void handleSaveMissingContact()}
+            onCancel={handleCancel}
+          />
+        )}
       </div>
 
       {/* Command bar */}
@@ -194,7 +330,7 @@ export function CommandCenter() {
             type="submit"
             aria-label="Send command"
             disabled={!input.trim() || flow.phase === "broadcasting"}
-            className="ml-1 flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-all hover:bg-primary-glow disabled:opacity-30"
+            className="ml-1 flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-all hover:bg-primary-glow disabled:opacity-30 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <ArrowUp className="h-4 w-4" />
           </button>
@@ -237,9 +373,11 @@ function ReviewBlock({
       <div className="space-y-1.5 text-sm">
         {isSend ? (
           <>
-            <Row label="To" value={`@${tx.recipient}`} />
-            <Row label="Wallet" mono value="7Yx…abc123" />
-            <div className="text-xs text-primary">✓ Verified recipient</div>
+            <Row label="To" value={tx.recipientLabel} />
+            <Row label="Wallet" mono value={truncateAddress(tx.recipientWallet)} />
+            <div className="text-xs text-primary">
+              ✓ {tx.recipientSource === "contact" ? "Saved contact" : "Resolved recipient"}
+            </div>
           </>
         ) : (
           <>
@@ -253,7 +391,7 @@ function ReviewBlock({
       </div>
 
       <div className="space-y-1 text-xs">
-        <div className="text-warning">⚠ First time interacting with this address</div>
+        {isSend && <div className="text-warning">⚠ First time interacting with this address</div>}
         {tx.amount >= 5 && (
           <div className="text-warning">⚠ Large amount — please double check</div>
         )}
@@ -262,13 +400,13 @@ function ReviewBlock({
       <div className="flex items-center gap-3 pt-1">
         <button
           onClick={onConfirm}
-          className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary-glow active:scale-[0.98] glow-primary"
+          className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary-glow active:scale-[0.98] glow-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           Confirm Transaction
         </button>
         <button
           onClick={onCancel}
-          className="rounded-lg border border-border px-5 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="rounded-lg border border-border px-5 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           Cancel
         </button>
@@ -300,7 +438,7 @@ function SuccessBlock({
       <div className="text-sm font-medium text-primary">✓ Sent successfully</div>
       <div className="mt-2 text-sm text-foreground">
         {tx.kind === "send"
-          ? `${tx.amount} ${tx.token} sent to @${tx.recipient}`
+          ? `${tx.amount} ${tx.token} sent to ${tx.recipientLabel}`
           : `Swapped ${tx.amount} ${tx.from} for ${tx.to}`}
       </div>
       <div className="mt-3 flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
@@ -320,6 +458,67 @@ function SuccessBlock({
           className="text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MissingContactBlock({
+  tx,
+  walletDraft,
+  saving,
+  error,
+  onWalletDraftChange,
+  onSave,
+  onCancel,
+}: {
+  tx: Extract<ParsedTx, { kind: "send" }>;
+  walletDraft: string;
+  saving: boolean;
+  error?: string;
+  onWalletDraftChange: (value: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="animate-enter space-y-4 border-l-2 border-primary/40 pl-5">
+      <div className="space-y-1">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">
+          No contact found for "{tx.recipientName}"
+        </div>
+        <div className="text-sm text-muted-foreground">
+          Enter the wallet address once, save it to contacts, and continue.
+        </div>
+      </div>
+      <div className="space-y-2">
+        <label className="text-xs text-muted-foreground" htmlFor="missing-wallet">
+          Wallet address
+        </label>
+        <input
+          id="missing-wallet"
+          value={walletDraft}
+          onChange={(event) => onWalletDraftChange(event.target.value)}
+          placeholder="7YxQzK9p..."
+          className="w-full rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm text-foreground outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        />
+        {error && <div className="text-xs text-destructive">{error}</div>}
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary-glow disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {saving ? "Saving..." : "Save & Continue"}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg border border-border px-5 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          Cancel
         </button>
       </div>
     </div>

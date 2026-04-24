@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { Check, Copy } from "lucide-react";
+import { ContactsManager } from "@/components/app/ContactsManager";
 
 export const Route = createFileRoute("/app/identity")({
   head: () => ({
@@ -13,13 +15,14 @@ export const Route = createFileRoute("/app/identity")({
 });
 
 function IdentityPage() {
-  const [username, setUsername] = useState("prajwal");
-  const [editing, setEditing] = useState(false);
   const [copied, setCopied] = useState(false);
-  const address = "7YxQzK9p2vN3mBcAfEbR8sH5jWxLp1abc123";
+  const { publicKey } = useWallet();
+  const address = publicKey?.toBase58() ?? "";
 
-  function copy() {
-    navigator.clipboard.writeText(address);
+  async function copy() {
+    if (!address) return;
+
+    await navigator.clipboard.writeText(address);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -35,59 +38,30 @@ function IdentityPage() {
 
       <div className="max-w-xl space-y-12">
         <section>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Username</div>
-          {editing ? (
-            <div className="mt-2 flex items-center gap-2">
-              <span className="font-mono text-foreground">@</span>
-              <input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="flex-1 rounded-md bg-surface px-3 py-2 font-mono text-base text-foreground focus:outline-none focus:glow-primary-sm"
-                autoFocus
-              />
-              <button
-                onClick={() => setEditing(false)}
-                className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary-glow"
-              >
-                Save
-              </button>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Identity</div>
+          <div className="mt-2 text-sm text-muted-foreground">Your wallet public key is your user identity.</div>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="break-all font-mono text-base text-foreground">
+              {address || "Connect a wallet to view your public key."}
             </div>
-          ) : (
-            <div className="mt-2 flex items-center gap-3">
-              <div className="font-mono text-2xl text-foreground">@{username}</div>
+            {address && (
               <button
-                onClick={() => setEditing(true)}
-                className="text-xs text-primary transition-colors hover:text-primary-glow"
+                type="button"
+                onClick={() => void copy()}
+                aria-label="Copy address"
+                className="shrink-0 rounded-md p-2 text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                Edit
+                {copied ? <Check className="h-4 w-4 text-primary" /> : <Copy className="h-4 w-4" />}
               </button>
-            </div>
-          )}
-        </section>
-
-        <section>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">
-            Wallet address
-          </div>
-          <div className="mt-2 flex items-center gap-3">
-            <div className="break-all font-mono text-sm text-foreground">{address}</div>
-            <button
-              onClick={copy}
-              aria-label="Copy address"
-              className="shrink-0 rounded-md p-2 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {copied ? (
-                <Check className="h-4 w-4 text-primary" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
-            </button>
+            )}
           </div>
         </section>
 
         <section>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Network</div>
-          <div className="mt-2 text-sm text-foreground">Solana Mainnet</div>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Contacts</div>
+          <div className="mt-4">
+            <ContactsManager userId={address || null} />
+          </div>
         </section>
       </div>
     </div>
