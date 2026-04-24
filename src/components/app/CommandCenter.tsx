@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Mic, ArrowUp, ExternalLink } from "lucide-react";
-import { createContact, resolveRecipient, isValidSolanaAddress } from "@/lib/contacts";
+import { createContact, resolveRecipient, isValidSolanaAddress, listContacts, type Contact } from "@/lib/contacts";
 
 type ParsedTx =
   | {
@@ -94,16 +94,97 @@ export function CommandCenter() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [flow, setFlow] = useState<FlowState>({ phase: "idle" });
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // @ mention autocomplete state
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionQuery, setSuggestionQuery] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [log, flow]);
+
+  // Load contacts when user connects wallet
+  useEffect(() => {
+    if (userId && connected) {
+      setLoadingContacts(true);
+      listContacts(userId)
+        .then((response) => setContacts(response.contacts))
+        .catch((err) => console.error("Failed to load contacts:", err))
+        .finally(() => setLoadingContacts(false));
+    }
+  }, [userId, connected]);
 
   function appendUser(text: string) {
     setLog((l) => [...l, { id: crypto.randomUUID(), type: "user", text }]);
   }
   function appendSystem(text: string) {
     setLog((l) => [...l, { id: crypto.randomUUID(), type: "system", text }]);
+  }
+
+  // Filter contacts based on suggestion query
+  const filteredContacts = contacts.filter((c) =>
+    c.name.toLowerCase().includes(suggestionQuery.toLowerCase())
+  );
+
+  // Handle @ mention input detection
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value;
+    setInput(value);
+
+    // Detect @ pattern at end of input
+    const match = value.match(/@(\w*)$/);
+    if (match) {
+      setShowSuggestions(true);
+      setSuggestionQuery(match[1]);
+      setSelectedIndex(0);
+    } else {
+      setShowSuggestions(false);
+    }
+  }
+
+  // Handle @ mention selection
+  function handleSelectContact(name: string) {
+    const newValue = input.replace(/@\w*$/, `@${name} `);
+    setInput(newValue);
+    setShowSuggestions(false);
+    setSuggestionQuery("");
+    setSelectedIndex(0);
+    // Focus back to input
+    inputRef.current?.focus();
+  }
+
+  // Handle keyboard navigation in suggestions
+  function handleInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!showSuggestions || filteredContacts.length === 0) return;
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          Math.min(prev + 1, filteredContacts.length - 1)
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setSelectedIndex((prev) => Math.max(prev - 1, 0));
+        break;
+      case "Enter":
+        if (showSuggestions) {
+          e.preventDefault();
+          handleSelectContact(filteredContacts[selectedIndex].name);
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        setShowSuggestions(false);
+        break;
+      default:
+        break;
+    }
   }
 
   async function handleSubmit(e?: FormEvent) {
@@ -310,10 +391,39 @@ export function CommandCenter() {
       {/* Command bar */}
       <form onSubmit={handleSubmit} className="pt-6">
         <div className="group relative flex items-center rounded-xl bg-surface px-4 py-3 transition-shadow focus-within:glow-primary-sm">
+          {/* @ mention suggestions dropdown */}
+          {showSuggestions && filteredContacts.length > 0 && (
+            <div className="absolute bottom-full left-0 right-0 mb-2 rounded-lg bg-surface border border-border shadow-lg z-20">
+              {filteredContacts.map((contact, i) => (
+                <button
+                  key={contact.id}
+                  type="button"
+                  onClick={() => handleSelectContact(contact.name)}
+                  className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between ${
+                    i === selectedIndex
+                      ? "bg-primary/10 text-primary"
+                      : "text-foreground hover:bg-surface/80"
+                  }`}
+                >
+                  <span className="font-mono">@{contact.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {truncateAddress(contact.wallet)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {showSuggestions && filteredContacts.length === 0 && suggestionQuery && (
+            <div className="absolute bottom-full left-0 right-0 mb-2 rounded-lg bg-surface border border-border shadow-lg z-20 px-4 py-3 text-xs text-muted-foreground">
+              No contacts found for @{suggestionQuery}
+            </div>
+          )}
           <span className="mr-3 font-mono text-sm text-muted-foreground">{">"}</span>
           <input
+            ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
+            onKeyDown={handleInputKeyDown}
             placeholder="Type a command…"
             className="flex-1 bg-transparent font-mono text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
             autoFocus
