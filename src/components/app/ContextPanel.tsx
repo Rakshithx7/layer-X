@@ -8,7 +8,6 @@ const TOKENS = [
 
 const PORTFOLIO_TOKENS = [
   { symbol: "SOL", value: 8123.21, change: 2.34 },
-  { symbol: "USDC", value: 1000.0, change: 0.0 },
   { symbol: "ETH", value: 245000.55, change: -1.12 },
   { symbol: "BTC", value: 5820000.0, change: 0.85 },
   { symbol: "PENGU", value: 4200.0, change: 12.5 },

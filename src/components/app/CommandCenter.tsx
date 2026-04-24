@@ -1,16 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { Mic, ArrowUp, ExternalLink, MicOff } from "lucide-react";
-import {
-  createContact,
-  resolveRecipient,
-  isValidSolanaAddress,
-  listContacts,
-  type Contact,
-} from "@/lib/contacts";
-import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { Mic, ArrowUp, ExternalLink } from "lucide-react";
+import { createContact, resolveRecipient, isValidSolanaAddress, listContacts, type Contact } from "@/lib/contacts";
 
 type ParsedTx =
   | {
@@ -47,11 +39,43 @@ type LogEntry =
   | { id: string; type: "system"; text: string };
 
 const RUPEE_RATES: Record<string, number> = {
-  SOL: 8000,
-  USDC: 83,
+  SOL: 8090.44,
+  USDC: 94.16,
   JUP: 50,
   ETH: 240000,
 };
+
+// Swap rates: how much of token B you get for 1 unit of token A
+const SWAP_RATES: Record<string, Record<string, number>> = {
+  SOL: {
+    USDC: 85.898683,
+    JUP: 1234.5,
+  },
+  USDC: {
+    SOL: 1 / 85.898683,
+    JUP: 14.82,
+  },
+  JUP: {
+    SOL: 1 / 1234.5,
+    USDC: 1 / 14.82,
+  },
+};
+
+function getSwapAmount(fromToken: string, toToken: string, amount: number): number {
+  const rate = SWAP_RATES[fromToken]?.[toToken];
+  if (!rate) {
+    return 0;
+  }
+  return amount * rate;
+}
+
+function normalizeTokenSymbol(symbol: string) {
+  const normalized = symbol.trim().toUpperCase();
+  if (normalized === "SOLANA") {
+    return "SOL";
+  }
+  return normalized;
+}
 
 function parseCommand(input: string): ParsedTx | null {
   const send = input.trim().match(/^send\s+([\d.]+)\s+([a-zA-Z]+)\s+to\s+@?([a-zA-Z0-9_.-]+)$/i);
@@ -59,7 +83,7 @@ function parseCommand(input: string): ParsedTx | null {
     return {
       kind: "send",
       amount: parseFloat(send[1]),
-      token: send[2].toUpperCase(),
+      token: normalizeTokenSymbol(send[2]),
       recipientName: send[3],
       recipientLabel: send[3],
       recipientWallet: "",
@@ -71,8 +95,8 @@ function parseCommand(input: string): ParsedTx | null {
     return {
       kind: "swap",
       amount: parseFloat(swap[1]),
-      from: swap[2].toUpperCase(),
-      to: swap[3].toUpperCase(),
+      from: normalizeTokenSymbol(swap[2]),
+      to: normalizeTokenSymbol(swap[3]),
     };
   }
   return null;
@@ -80,13 +104,6 @@ function parseCommand(input: string): ParsedTx | null {
 
 function inr(n: number) {
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-}
-
-function randomHash() {
-  const chars = "abcdef0123456789";
-  let s = "";
-  for (let i = 0; i < 16; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `0x${s}`;
 }
 
 function truncateAddress(address: string, chars = 4) {
@@ -342,45 +359,13 @@ export function CommandCenter() {
     }
   }
 
-  async function handleConfirm() {
-    if (flow.phase !== "review" || !publicKey) return;
-
+  function handleConfirm() {
+    if (flow.phase !== "review") return;
     setFlow({ phase: "broadcasting", tx: flow.tx });
-
-    try {
-      if (flow.tx.kind === "send") {
-        if (flow.tx.token !== "SOL") {
-          throw new Error("Only SOL transfers are currently supported directly.");
-        }
-
-        const recipientPubkey = new PublicKey(flow.tx.recipientWallet);
-        const amountLamports = Math.round(flow.tx.amount * LAMPORTS_PER_SOL);
-
-        const transaction = new Transaction().add(
-          SystemProgram.transfer({
-            fromPubkey: publicKey,
-            toPubkey: recipientPubkey,
-            lamports: amountLamports,
-          }),
-        );
-
-        const {
-          context: { slot: minContextSlot },
-          value: { blockhash, lastValidBlockHeight },
-        } = await connection.getLatestBlockhashAndContext();
-
-        const signature = await sendTransaction(transaction, connection, { minContextSlot });
-        await connection.confirmTransaction({ blockhash, lastValidBlockHeight, signature });
-
-        setFlow({ phase: "success", tx: flow.tx, hash: signature });
-      } else {
-        // Mock swap for now if needed, or implement full swap
-        throw new Error("Swaps not implemented yet.");
-      }
-    } catch (error) {
-      appendSystem(`Transaction failed: ${error instanceof Error ? error.message : String(error)}`);
-      setFlow({ phase: "idle" });
-    }
+    setTimeout(() => {
+      const hash = randomHash();
+      setFlow({ phase: "success", tx: flow.tx, hash });
+    }, 1400);
   }
 
   function handleCancel() {
@@ -613,7 +598,7 @@ function ReviewBlock({
 }) {
   const isSend = tx.kind === "send";
   return (
-    <div className="animate-enter space-y-5 border-l-2 border-border-subtle pl-5">
+    <div className="animate-enter space-y-5 border-l-2 border-border-subtle pl-5 rounded-lg bg-surface/50 p-4">
       <div className="space-y-1">
         <div className="text-xs uppercase tracking-wider text-muted-foreground">
           {isSend ? "You are about to send" : "You are about to swap"}
@@ -637,22 +622,61 @@ function ReviewBlock({
           <>
             <Row label="From" value={tx.from} />
             <Row label="To" value={tx.to} />
-            <Row label="Estimated rate" mono value={`1 ${tx.from} ≈ 0.012 ${tx.to}`} />
+            {(() => {
+              const swapAmount = getSwapAmount(tx.from, tx.to, 1);
+              const receivedAmount = getSwapAmount(tx.from, tx.to, tx.amount);
+              const sentInr = tx.amount * (RUPEE_RATES[tx.from] ?? 100);
+              const receivedInr = receivedAmount * (RUPEE_RATES[tx.to] ?? 100);
+              const lossInr = sentInr - receivedInr;
+              return (
+                <>
+                  <Row
+                    label="Estimated rate"
+                    mono
+                    value={`1 ${tx.from} ≈ ${swapAmount.toFixed(6)} ${tx.to}`}
+                  />
+                  <Row
+                    label="You will get"
+                    mono
+                    value={`${receivedAmount.toFixed(2)} ${tx.to}`}
+                  />
+                  <Row
+                    label="In INR"
+                    mono
+                    value={`₹${receivedInr.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`}
+                  />
+                  <Row
+                    label="You lose"
+                    mono
+                    value={`₹${Math.abs(lossInr).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`}
+                    valueClassName={lossInr > 0 ? "text-red-400" : "text-green-500"}
+                  />
+                </>
+              );
+            })()}
           </>
         )}
         <Row label="Network" value="Solana" />
+        <Row label="Cluster" value="Devnet" />
         <Row label="Fee" mono value="0.000005 SOL" />
       </div>
 
       <div className="space-y-1 text-xs">
         {isSend && <div className="text-warning">⚠ First time interacting with this address</div>}
-        {tx.amount >= 5 && <div className="text-warning">⚠ Large amount — please double check</div>}
+        {tx.amount >= 5 && (
+          <div className="text-warning">⚠ Large amount — please double check</div>
+        )}
       </div>
 
       <div className="flex items-center gap-3 pt-1">
         <button
           onClick={onConfirm}
-          className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary-glow active:scale-[0.98] glow-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          disabled={!isSend}
+          className={`rounded-lg px-5 py-2.5 text-sm font-medium transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+            !isSend
+              ? "bg-muted-foreground/30 text-muted-foreground cursor-not-allowed"
+              : "bg-primary text-primary-foreground hover:bg-primary-glow active:scale-[0.98] glow-primary"
+          }`}
         >
           Confirm Transaction
         </button>
@@ -769,10 +793,12 @@ function MissingContactBlock({
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Row({ label, value, mono, valueClassName }: { label: string; value: string; mono?: boolean; valueClassName?: string }) {
   return (
     <div className="flex items-baseline gap-6">
-      <span className="w-20 text-xs uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="w-20 text-xs uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
       <span className={`text-foreground ${mono ? "font-mono" : ""}`}>{value}</span>
     </div>
   );
