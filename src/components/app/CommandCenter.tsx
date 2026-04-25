@@ -13,6 +13,8 @@ import {
 } from "@/lib/contacts";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { truncateAddress } from "@/lib/wallet-assets";
+import { createLaunchTransaction } from "@/lib/launchpad";
+import { parseCreateTokenCommand } from "@/lib/command-parser";
 
 type ParsedTx =
   | {
@@ -29,13 +31,22 @@ type ParsedTx =
       amount: number;
       from: string;
       to: string;
+    }
+  | {
+      kind: "launch";
+      tokenName: string;
+      tokenSymbol: string;
+      initialSupply: string;
+      decimals: number;
+      tokenDescription: string;
+      tokenLogoURL: string;
     };
 
 type FlowState =
   | { phase: "idle" }
   | { phase: "review"; tx: ParsedTx }
   | { phase: "broadcasting"; tx: ParsedTx }
-  | { phase: "success"; tx: ParsedTx; hash: string }
+  | { phase: "success"; tx: ParsedTx; hash: string; mintAddress?: string }
   | {
       phase: "missing-contact";
       tx: Extract<ParsedTx, { kind: "send" }>;
@@ -56,6 +67,19 @@ const RUPEE_RATES: Record<string, number> = {
 };
 
 function parseCommand(input: string): ParsedTx | null {
+  const launch = parseCreateTokenCommand(input);
+  if (launch) {
+    return {
+      kind: "launch",
+      tokenName: launch.tokenName,
+      tokenSymbol: launch.tokenSymbol,
+      initialSupply: launch.initialSupply,
+      decimals: 6,
+      tokenDescription: `Token ${launch.tokenSymbol} created via command center`,
+      tokenLogoURL: launch.tokenLogoURL ?? "",
+    };
+  }
+
   const send = input.trim().match(/^send\s+([\d.]+)\s+([a-zA-Z]+)\s+to\s+@?([a-zA-Z0-9_.-]+)$/i);
   if (send) {
     return {
@@ -380,13 +404,26 @@ export function CommandCenter() {
     const parsed = parseCommand(text);
     if (!parsed) {
       appendSystem(
-        "I didn't understand that. Try: 'send 1 SOL to @prajwal' or 'swap 10 USDC to SOL'.",
+        "I didn't understand that. Try: 'send 1 SOL to @prajwal', 'swap 10 USDC to SOL', or 'create token PrajwalCoin PRJ 1000000 https://example.com/logo.png'.",
       );
       return;
     }
 
     if (parsed.kind === "swap") {
       setFlow({ phase: "review", tx: parsed });
+      return;
+    }
+
+    if (parsed.kind === "launch") {
+      if (!connected || !publicKey) {
+        appendSystem("Connect your wallet first so I can create and send the launch transaction.");
+        return;
+      }
+
+      setFlow({ phase: "review", tx: parsed });
+      appendSystem(
+        `Prepared launch draft for ${parsed.tokenName} (${parsed.tokenSymbol}) with ${Number(parsed.initialSupply).toLocaleString("en-IN")} supply${parsed.tokenLogoURL ? " and logo" : ""}.`,
+      );
       return;
     }
 
@@ -484,6 +521,31 @@ export function CommandCenter() {
         await connection.confirmTransaction({ blockhash, lastValidBlockHeight, signature });
 
         setFlow({ phase: "success", tx: flow.tx, hash: signature });
+      } else if (flow.tx.kind === "launch") {
+        const payload = await createLaunchTransaction({
+          account: publicKey.toBase58(),
+          tokenName: flow.tx.tokenName,
+          tokenSymbol: flow.tx.tokenSymbol,
+          decimals: flow.tx.decimals,
+          initialSupply: flow.tx.initialSupply,
+          tokenDescription: flow.tx.tokenDescription,
+          tokenLogoURL: flow.tx.tokenLogoURL,
+        });
+
+        if (!payload.serializedTransaction) {
+          throw new Error("Launch transaction was not returned by the server.");
+        }
+
+        const launchTx = Transaction.from(base64ToUint8Array(payload.serializedTransaction));
+        const signature = await sendTransaction(launchTx, connection);
+        await connection.confirmTransaction(signature, "confirmed");
+
+        setFlow({
+          phase: "success",
+          tx: flow.tx,
+          hash: signature,
+          mintAddress: payload.mintAddress,
+        });
       } else {
         // Mock swap for now if needed, or implement full swap
         throw new Error("Swaps not implemented yet.");
@@ -553,7 +615,7 @@ export function CommandCenter() {
             What do you want to do today?
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Try: <span className="font-mono text-foreground/80">send 1 SOL to @prajwal</span>
+            Try: <span className="font-mono text-foreground/80">send 1 SOL to @prajwal</span> or <span className="font-mono text-foreground/80">create token PrajwalCoin PRJ 1000000 https://example.com/logo.png</span>
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -588,7 +650,12 @@ export function CommandCenter() {
         )}
         {flow.phase === "broadcasting" && <BroadcastingBlock />}
         {flow.phase === "success" && (
-          <SuccessBlock tx={flow.tx} hash={flow.hash} onDone={handleReset} />
+          <SuccessBlock
+            tx={flow.tx}
+            hash={flow.hash}
+            mintAddress={flow.mintAddress}
+            onDone={handleReset}
+          />
         )}
         {flow.phase === "missing-contact" && (
           <MissingContactBlock
@@ -708,6 +775,9 @@ export function CommandCenter() {
 }
 
 function txAmountInr(tx: ParsedTx) {
+  if (tx.kind === "launch") {
+    return "₹80";
+  }
   const symbol = tx.kind === "send" ? tx.token : tx.from;
   const rate = RUPEE_RATES[symbol] ?? 100;
   return inr(tx.amount * rate);
@@ -723,16 +793,24 @@ function ReviewBlock({
   onCancel: () => void;
 }) {
   const isSend = tx.kind === "send";
+  const isLaunch = tx.kind === "launch";
   return (
     <div className="animate-enter space-y-5 border-l-2 border-border-subtle pl-5">
       <div className="space-y-1">
         <div className="text-xs uppercase tracking-wider text-muted-foreground">
-          {isSend ? "You are about to send" : "You are about to swap"}
+          {isSend ? "You are about to send" : isLaunch ? "You are about to launch token" : "You are about to swap"}
         </div>
-        <div className="font-mono text-2xl font-medium text-foreground">
-          {tx.amount} {isSend ? tx.token : tx.from}
-          <span className="ml-2 text-base text-muted-foreground">({txAmountInr(tx)})</span>
-        </div>
+        {isLaunch ? (
+          <div className="font-mono text-2xl font-medium text-foreground">
+            {tx.tokenName}
+            <span className="ml-2 text-base text-muted-foreground">({tx.tokenSymbol})</span>
+          </div>
+        ) : (
+          <div className="font-mono text-2xl font-medium text-foreground">
+            {tx.amount} {isSend ? tx.token : tx.from}
+            <span className="ml-2 text-base text-muted-foreground">({txAmountInr(tx)})</span>
+          </div>
+        )}
       </div>
 
       <div className="space-y-1.5 text-sm">
@@ -744,6 +822,15 @@ function ReviewBlock({
               ✓ {tx.recipientSource === "contact" ? "Saved contact" : "Resolved recipient"}
             </div>
           </>
+        ) : isLaunch ? (
+          <>
+            <Row label="Action" value="Create SPL token" />
+            <Row label="Name" value={tx.tokenName} />
+            <Row label="Symbol" value={tx.tokenSymbol} mono />
+            <Row label="Supply" value={Number(tx.initialSupply).toLocaleString("en-IN")} mono />
+            <Row label="Decimals" value={String(tx.decimals)} mono />
+            {tx.tokenLogoURL ? <Row label="Logo" value={truncateAddress(tx.tokenLogoURL, 14)} /> : null}
+          </>
         ) : (
           <>
             <Row label="From" value={tx.from} />
@@ -753,12 +840,15 @@ function ReviewBlock({
         )}
         <Row label="Network" value="Solana" />
         <Row label="Cluster" value="Devnet" />
-        <Row label="Fee" mono value="0.000005 SOL" />
+        <Row label="Fee" mono value={isLaunch ? "~0.01 SOL" : "0.000005 SOL"} />
       </div>
 
       <div className="space-y-1 text-xs">
         {isSend && <div className="text-warning">⚠ First time interacting with this address</div>}
-        {tx.amount >= 5 && <div className="text-warning">⚠ Large amount — please double check</div>}
+        {(tx.kind === "send" || tx.kind === "swap") && tx.amount >= 5 && (
+          <div className="text-warning">⚠ Large amount — please double check</div>
+        )}
+        {isLaunch && <div className="text-warning">⚠ Verify token details before launch. Metadata is public and immutable in practice.</div>}
       </div>
 
       <div className="flex items-center gap-3 pt-1">
@@ -788,7 +878,17 @@ function BroadcastingBlock() {
   );
 }
 
-function SuccessBlock({ tx, hash, onDone }: { tx: ParsedTx; hash: string; onDone: () => void }) {
+function SuccessBlock({
+  tx,
+  hash,
+  mintAddress,
+  onDone,
+}: {
+  tx: ParsedTx;
+  hash: string;
+  mintAddress?: string;
+  onDone: () => void;
+}) {
   const [copied, setCopied] = useState(false);
 
   async function copySignature() {
@@ -799,12 +899,21 @@ function SuccessBlock({ tx, hash, onDone }: { tx: ParsedTx; hash: string; onDone
 
   return (
     <div className="animate-enter animate-success rounded-xl border border-primary/30 bg-surface/50 p-5">
-      <div className="text-sm font-medium text-primary">✓ Sent successfully</div>
+      <div className="text-sm font-medium text-primary">
+        ✓ {tx.kind === "launch" ? "Token launched successfully" : "Sent successfully"}
+      </div>
       <div className="mt-2 text-sm text-foreground">
         {tx.kind === "send"
           ? `${tx.amount} ${tx.token} sent to ${tx.recipientLabel}`
-          : `Swapped ${tx.amount} ${tx.from} for ${tx.to}`}
+          : tx.kind === "launch"
+            ? `${tx.tokenName} (${tx.tokenSymbol}) launched with ${Number(tx.initialSupply).toLocaleString("en-IN")} supply`
+            : `Swapped ${tx.amount} ${tx.from} for ${tx.to}`}
       </div>
+      {mintAddress ? (
+        <div className="mt-2 text-xs text-muted-foreground">
+          Mint: <span className="font-mono text-foreground">{truncateAddress(mintAddress)}</span>
+        </div>
+      ) : null}
       <div className="mt-3 flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
         Txn: {hash}…
       </div>
@@ -911,4 +1020,15 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
       <span className={`text-foreground ${mono ? "font-mono" : ""}`}>{value}</span>
     </div>
   );
+}
+
+function base64ToUint8Array(value: string) {
+  const binary = window.atob(value);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
 }
