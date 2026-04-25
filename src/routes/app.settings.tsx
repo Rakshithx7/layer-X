@@ -4,8 +4,8 @@ import { useState } from "react";
 export const Route = createFileRoute("/app/settings")({
   head: () => ({
     meta: [
-      { title: "Settings — CryptoChat" },
-      { name: "description", content: "Preferences for CryptoChat." },
+      { title: "Settings — layer-x" },
+      { name: "description", content: "Preferences for layer-x." },
     ],
   }),
   component: SettingsPage,

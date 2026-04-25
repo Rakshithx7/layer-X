@@ -7,7 +7,7 @@ import { ContactsManager } from "@/components/app/ContactsManager";
 export const Route = createFileRoute("/app/identity")({
   head: () => ({
     meta: [
-      { title: "Identity — CryptoChat" },
+      { title: "Identity — layer-x" },
       { name: "description", content: "Your username and wallet identity." },
     ],
   }),
@@ -32,7 +32,7 @@ function IdentityPage() {
       <header className="pb-12">
         <h1 className="text-2xl font-medium tracking-tight sm:text-3xl">Identity</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          How others find and pay you on CryptoChat.
+          How others find and pay you on layer-x.
         </p>
       </header>
 

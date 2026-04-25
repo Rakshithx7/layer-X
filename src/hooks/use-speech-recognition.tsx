@@ -5,6 +5,17 @@ interface UseSpeechRecognitionOptions {
   language?: string;
   interimResults?: boolean;
   keywords?: string[];
+  keywordBoost?: number;
+  deepgramModel?: string;
+  smartFormat?: boolean;
+  punctuate?: boolean;
+  numerals?: boolean;
+  profanityFilter?: boolean;
+  vadEvents?: boolean;
+  endpointingMs?: number;
+  utteranceEndMs?: number;
+  chunkMs?: number;
+  audioBitsPerSecond?: number;
   onResult?: (transcript: string, isFinal: boolean) => void;
   onError?: (error: string) => void;
 }
@@ -67,6 +78,9 @@ function normalizeNumbers(text: string): string {
     normalized = normalized.replace(regex, digit);
   });
 
+  // Convert spoken decimals like "1 point 5" into "1.5".
+  normalized = normalized.replace(/\b(\d+)\s+point\s+(\d+)\b/gi, "$1.$2");
+
   normalized = normalized.replace(/\b(sol|soul|solve|sold|salt)\b/gi, "SOL");
   normalized = normalized.replace(/\b(usdc|u s d c)\b/gi, "USDC");
   normalized = normalized.replace(/\b(jup|jupiter)\b/gi, "JUP");
@@ -76,12 +90,28 @@ function normalizeNumbers(text: string): string {
   // Strip trailing punctuation so it doesn't break our regex or contact matching.
   normalized = normalized.replace(/[.,!?]+$/, "");
 
-  // Format "to username" or "to at username" as "to @username"
-  // Replaced \b at the end with a looser match to handle names more reliably
-  normalized = normalized.replace(/\bto\s+(?:at\s+)?(?!@)([a-zA-Z0-9_.-]+)/gi, "to @$1");
+  // Canonicalize transfer commands into a stable shape for parser reliability.
+  normalized = normalized.replace(
+    /\b(send|transfer)\s+(\d+(?:\.\d+)?)\s*(SOL|USDC|JUP|ETH)\s+to\s+(?:at\s+)?@?([a-zA-Z0-9_.-]+)/i,
+    (_match, _verb, amount, token, recipient) =>
+      `send ${amount} ${String(token).toUpperCase()} to @${String(recipient).toLowerCase()}`,
+  );
 
-  // Also catch generic "at username" -> "@username"
-  normalized = normalized.replace(/\bat\s+(?!@)([a-zA-Z0-9_.-]+)/gi, "@$1");
+  normalized = normalized.replace(
+    /\b(?:swap|exchange|convert)\s+(\d+(?:\.\d+)?)\s*(SOL|USDC|JUP|ETH)\s+(?:to|for|into)\s+(SOL|USDC|JUP|ETH)\b/i,
+    (_match, amount, fromToken, toToken) =>
+      `swap ${amount} ${String(fromToken).toUpperCase()} to ${String(toToken).toUpperCase()}`,
+  );
+
+  // Fallback formatting for partial phrases that are not full transfer commands.
+  normalized = normalized.replace(/\bto\s+(?:at\s+)?(?!@)([a-zA-Z][a-zA-Z0-9_.-]*)\b/gi, "to @$1");
+  normalized = normalized.replace(/\bat\s+(?!@)([a-zA-Z][a-zA-Z0-9_.-]*)\b/gi, "@$1");
+
+  // Keep handle casing predictable for matching against normalized contact names.
+  normalized = normalized.replace(
+    /@([a-zA-Z0-9_.-]+)/g,
+    (_m, handle) => `@${handle.toLowerCase()}`,
+  );
 
   return normalized;
 }
@@ -89,7 +119,24 @@ function normalizeNumbers(text: string): string {
 export function useSpeechRecognition(
   options: UseSpeechRecognitionOptions = {},
 ): UseSpeechRecognitionReturn {
-  const { language = "en-US", keywords = [], onResult, onError } = options;
+  const {
+    language = "en-US",
+    interimResults = true,
+    keywords = [],
+    keywordBoost = 10,
+    deepgramModel = "nova-2",
+    smartFormat = true,
+    punctuate = true,
+    numerals = true,
+    profanityFilter = false,
+    vadEvents = true,
+    endpointingMs = 500,
+    utteranceEndMs = 1200,
+    chunkMs = 250,
+    audioBitsPerSecond = 128000,
+    onResult,
+    onError,
+  } = options;
 
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +150,7 @@ export function useSpeechRecognition(
   const socketRef = useRef<WebSocket | null>(null);
 
   const lastProcessedRef = useRef<string>("");
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Track accumulated string across utterances
   const accumulatedRef = useRef("");
@@ -176,12 +223,34 @@ export function useSpeechRecognition(
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
       // 3. Connect to Deepgram WebSocket API
-      const keywordsParams =
-        keywords.length > 0
-          ? keywords.map((kw) => `&keywords=${encodeURIComponent(kw)}:10`).join("")
-          : "";
+      const wsParams = new URLSearchParams({
+        language,
+        model: deepgramModel,
+        smart_format: String(smartFormat),
+        punctuate: String(punctuate),
+        numerals: String(numerals),
+        profanity_filter: String(profanityFilter),
+        vad_events: String(vadEvents),
+        interim_results: String(interimResults),
+      });
 
-      const wssUrl = `wss://api.deepgram.com/v1/listen?language=${language}${keywordsParams}&model=nova-2&smart_format=true&interim_results=true`;
+      if (endpointingMs > 0) {
+        wsParams.set("endpointing", String(endpointingMs));
+      }
+
+      if (utteranceEndMs > 0) {
+        wsParams.set("utterance_end_ms", String(utteranceEndMs));
+      }
+
+      if (keywords.length > 0) {
+        for (const keyword of keywords) {
+          const trimmed = keyword.trim();
+          if (!trimmed) continue;
+          wsParams.append("keywords", `${trimmed}:${keywordBoost}`);
+        }
+      }
+
+      const wssUrl = `wss://api.deepgram.com/v1/listen?${wsParams.toString()}`;
       const socket = new WebSocket(wssUrl, ["token", deepgramToken]);
 
       socketRef.current = socket;
@@ -190,7 +259,15 @@ export function useSpeechRecognition(
         setIsListening(true);
 
         // Start streaming mic data
-        const mediaRecorder = new MediaRecorder(stream);
+        const recorderOptions: MediaRecorderOptions = {
+          audioBitsPerSecond,
+        };
+
+        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          recorderOptions.mimeType = "audio/webm;codecs=opus";
+        }
+
+        const mediaRecorder = new MediaRecorder(stream, recorderOptions);
         mediaRecorderRef.current = mediaRecorder;
 
         mediaRecorder.addEventListener("dataavailable", (event) => {
@@ -199,7 +276,7 @@ export function useSpeechRecognition(
           }
         });
 
-        mediaRecorder.start(250); // Send chunks every 250ms
+        mediaRecorder.start(chunkMs);
       };
 
       socket.onmessage = (message) => {
@@ -207,7 +284,7 @@ export function useSpeechRecognition(
 
         if (received.type === "Results") {
           const transcriptChunk = received.channel?.alternatives[0]?.transcript;
-          const isFinal = received.is_final;
+          const isFinal = Boolean(received.is_final);
 
           if (!transcriptChunk) return;
 
@@ -216,7 +293,9 @@ export function useSpeechRecognition(
             ? `${accumulatedRef.current} ${transcriptChunk}`
             : transcriptChunk;
 
-          setTranscript(currentViewingText);
+          if (interimResults || isFinal) {
+            setTranscript(currentViewingText);
+          }
 
           if (isFinal) {
             accumulatedRef.current = currentViewingText;
@@ -252,12 +331,24 @@ export function useSpeechRecognition(
       if (onError) onError(err instanceof Error ? err.message : String(err));
     }
   }, [
+    audioBitsPerSecond,
+    chunkMs,
+    deepgramModel,
+    endpointingMs,
     isMicrophoneAvailable,
+    interimResults,
+    keywordBoost,
     language,
     keywords,
+    numerals,
+    profanityFilter,
+    punctuate,
     requestMicrophonePermission,
     resetTranscript,
+    smartFormat,
     stopListening,
+    utteranceEndMs,
+    vadEvents,
     onError,
     onResult,
   ]);

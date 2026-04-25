@@ -8,6 +8,7 @@ import {
   resolveRecipient,
   isValidSolanaAddress,
   listContacts,
+  normalizeContactName,
   type Contact,
 } from "@/lib/contacts";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -90,6 +91,113 @@ function randomHash() {
   return `0x${s}`;
 }
 
+function levenshteinDistance(a: string, b: string) {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp: number[][] = Array.from({ length: rows }, () => Array(cols).fill(0));
+
+  for (let i = 0; i < rows; i++) dp[i][0] = i;
+  for (let j = 0; j < cols; j++) dp[0][j] = j;
+
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+
+  return dp[a.length][b.length];
+}
+
+function similarityScore(a: string, b: string) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+  return 1 - levenshteinDistance(a, b) / maxLen;
+}
+
+function phoneticNormalize(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/ph/g, "f")
+    .replace(/ck/g, "k")
+    .replace(/q/g, "k")
+    .replace(/x/g, "ks")
+    .replace(/z/g, "s")
+    .replace(/v/g, "w")
+    .replace(/[^a-z]/g, "");
+}
+
+function consonantSkeleton(value: string) {
+  return value.replace(/[aeiou]/g, "");
+}
+
+function robustNameSimilarity(spoken: string, contactName: string) {
+  const spokenNorm = phoneticNormalize(spoken);
+  const contactNorm = phoneticNormalize(contactName);
+
+  const raw = similarityScore(spokenNorm, contactNorm);
+  const consonant = similarityScore(consonantSkeleton(spokenNorm), consonantSkeleton(contactNorm));
+  const prefixBonus =
+    spokenNorm.startsWith(contactNorm.slice(0, 2)) || contactNorm.startsWith(spokenNorm.slice(0, 2))
+      ? 0.08
+      : 0;
+
+  return Math.max(raw, consonant) + prefixBonus;
+}
+
+function canonicalizeSpeechCommandWithContacts(text: string, contacts: Contact[]) {
+  const match = text
+    .trim()
+    .match(/^(send\s+[\d.]+\s+[a-zA-Z]+\s+to\s+)@?([a-zA-Z0-9_.-]+)$/i);
+
+  if (!match) {
+    return text;
+  }
+
+  const prefix = match[1];
+  const spokenRecipient = normalizeContactName(match[2]);
+  const exactContact = contacts.find((contact) => normalizeContactName(contact.name) === spokenRecipient);
+
+  if (exactContact) {
+    return `${prefix}@${normalizeContactName(exactContact.name)}`;
+  }
+
+  // Fallback to startsWith to absorb minor STT truncation while preserving deterministic output.
+  const partialContact = contacts.find((contact) =>
+    normalizeContactName(contact.name).startsWith(spokenRecipient),
+  );
+
+  if (partialContact) {
+    return `${prefix}@${normalizeContactName(partialContact.name)}`;
+  }
+
+  // Recover from severe STT name drift (e.g., "bridgeville" for "prajwal").
+  if (contacts.length > 0) {
+    let best: Contact | null = null;
+    let bestScore = -1;
+    let secondBestScore = -1;
+
+    for (const contact of contacts) {
+      const score = robustNameSimilarity(spokenRecipient, normalizeContactName(contact.name));
+      if (score > bestScore) {
+        secondBestScore = bestScore;
+        bestScore = score;
+        best = contact;
+      } else if (score > secondBestScore) {
+        secondBestScore = score;
+      }
+    }
+
+    const clearlyBetter = bestScore - secondBestScore >= 0.1;
+    if (best && (bestScore >= 0.32 || (bestScore >= 0.24 && clearlyBetter) || contacts.length === 1)) {
+      return `${prefix}@${normalizeContactName(best.name)}`;
+    }
+  }
+
+  return `${prefix}@${spokenRecipient}`;
+}
 export function CommandCenter() {
   const { connection } = useConnection();
   const { publicKey, connected, sendTransaction } = useWallet();
@@ -122,49 +230,59 @@ export function CommandCenter() {
     language: "en-IN", // Switch to Indian English for better Indian name recognition
     keywords: contacts.map((c) => c.name), // Boost recognition for precise user contacts
     interimResults: true,
+    deepgramModel: "nova-2",
+    keywordBoost: 20,
+    endpointingMs: 400,
+    utteranceEndMs: 1000,
+    punctuate: false,
+    numerals: true,
+    smartFormat: true,
+    vadEvents: true,
+    chunkMs: 200,
     onResult: (text, isFinal) => {
       if (text && text.trim()) {
         // Clean the text - remove extra spaces and normalize
         const cleanedText = text.trim();
+        const canonicalText = canonicalizeSpeechCommandWithContacts(cleanedText, contacts);
 
         // Only update input with final results to avoid duplicates
         if (isFinal) {
           setInput((prev) => {
             // If previous input already ends with this text, don't add it again
-            if (prev.endsWith(cleanedText)) {
+            if (prev.endsWith(canonicalText)) {
               return prev;
             }
 
             // If text is already contained in previous input, replace with new version
-            if (prev.includes(cleanedText) && cleanedText.length > 5) {
+            if (prev.includes(canonicalText) && canonicalText.length > 5) {
               // Find where the text starts and replace it
-              const startIndex = prev.indexOf(cleanedText);
+              const startIndex = prev.indexOf(canonicalText);
               if (startIndex !== -1) {
                 return (
                   prev.slice(0, startIndex) +
-                  cleanedText +
-                  prev.slice(startIndex + cleanedText.length)
+                  canonicalText +
+                  prev.slice(startIndex + canonicalText.length)
                 );
               }
             }
 
             // Append with space if needed
             if (!prev) {
-              return cleanedText;
+              return canonicalText;
             }
 
             // Check if we're continuing the same phrase
             const wordsPrev = prev.split(" ");
-            const wordsNew = cleanedText.split(" ");
+            const wordsNew = canonicalText.split(" ");
             const overlap = wordsPrev.slice(-3).join(" ");
 
-            if (cleanedText.startsWith(overlap) && overlap.length > 5) {
+            if (canonicalText.startsWith(overlap) && overlap.length > 5) {
               // Overlap found, remove overlapping part
-              return prev + cleanedText.slice(overlap.length);
+              return prev + canonicalText.slice(overlap.length);
             }
 
             // Otherwise append with space
-            return prev + (prev.endsWith(" ") ? "" : " ") + cleanedText;
+            return prev + (prev.endsWith(" ") ? "" : " ") + canonicalText;
           });
         }
       }

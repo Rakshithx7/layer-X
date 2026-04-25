@@ -52,7 +52,7 @@ const INR_RATES: Record<string, number> = {
 export const Route = createFileRoute("/app/explorer")({
   head: () => ({
     meta: [
-      { title: "Explorer — CryptoChat" },
+      { title: "Explorer — layer-x" },
       {
         name: "description",
         content: "Human-first Solana explorer that translates transactions into clear summaries.",

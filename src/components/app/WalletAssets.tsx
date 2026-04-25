@@ -22,6 +22,7 @@ export function WalletAssets() {
       setError(null);
       return;
     }
+    const owner = publicKey;
 
     let cancelled = false;
 
@@ -30,7 +31,7 @@ export function WalletAssets() {
       setError(null);
 
       try {
-        const nextAssets = await loadWalletAssets(connection, publicKey);
+        const nextAssets = await loadWalletAssets(connection, owner);
         if (!cancelled) {
           setAssets(nextAssets);
         }

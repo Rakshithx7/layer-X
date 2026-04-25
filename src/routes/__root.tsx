@@ -31,14 +31,14 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "CryptoChat — Crypto, but as simple as texting" },
+      { title: "layer-x — Crypto, but as simple as texting" },
       {
         name: "description",
         content:
           "Send, swap, and manage Solana crypto using plain English. No wallet complexity, human-readable transactions.",
       },
-      { name: "author", content: "CryptoChat" },
-      { property: "og:title", content: "CryptoChat — Crypto, as simple as texting" },
+      { name: "author", content: "layer-x" },
+      { property: "og:title", content: "layer-x — Crypto, as simple as texting" },
       {
         property: "og:description",
         content:

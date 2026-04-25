@@ -17,6 +17,7 @@ import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppLaunchRouteImport } from './routes/app.launch'
 import { Route as AppIdentityRouteImport } from './routes/app.identity'
 import { Route as AppExplorerRouteImport } from './routes/app.explorer'
+import { Route as AppDexAggregatorRouteImport } from './routes/app.dex-aggregator'
 import { Route as AppAssetsRouteImport } from './routes/app.assets'
 
 const AppRoute = AppRouteImport.update({
@@ -59,6 +60,11 @@ const AppExplorerRoute = AppExplorerRouteImport.update({
   path: '/explorer',
   getParentRoute: () => AppRoute,
 } as any)
+const AppDexAggregatorRoute = AppDexAggregatorRouteImport.update({
+  id: '/dex-aggregator',
+  path: '/dex-aggregator',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAssetsRoute = AppAssetsRouteImport.update({
   id: '/assets',
   path: '/assets',
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/app/assets': typeof AppAssetsRoute
+  '/app/dex-aggregator': typeof AppDexAggregatorRoute
   '/app/explorer': typeof AppExplorerRoute
   '/app/identity': typeof AppIdentityRoute
   '/app/launch': typeof AppLaunchRoute
@@ -79,6 +86,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app/assets': typeof AppAssetsRoute
+  '/app/dex-aggregator': typeof AppDexAggregatorRoute
   '/app/explorer': typeof AppExplorerRoute
   '/app/identity': typeof AppIdentityRoute
   '/app/launch': typeof AppLaunchRoute
@@ -91,6 +99,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/app/assets': typeof AppAssetsRoute
+  '/app/dex-aggregator': typeof AppDexAggregatorRoute
   '/app/explorer': typeof AppExplorerRoute
   '/app/identity': typeof AppIdentityRoute
   '/app/launch': typeof AppLaunchRoute
@@ -104,6 +113,7 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/app/assets'
+    | '/app/dex-aggregator'
     | '/app/explorer'
     | '/app/identity'
     | '/app/launch'
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/app/assets'
+    | '/app/dex-aggregator'
     | '/app/explorer'
     | '/app/identity'
     | '/app/launch'
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/app/assets'
+    | '/app/dex-aggregator'
     | '/app/explorer'
     | '/app/identity'
     | '/app/launch'
@@ -196,6 +208,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppExplorerRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/dex-aggregator': {
+      id: '/app/dex-aggregator'
+      path: '/dex-aggregator'
+      fullPath: '/app/dex-aggregator'
+      preLoaderRoute: typeof AppDexAggregatorRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/assets': {
       id: '/app/assets'
       path: '/assets'
@@ -208,6 +227,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppAssetsRoute: typeof AppAssetsRoute
+  AppDexAggregatorRoute: typeof AppDexAggregatorRoute
   AppExplorerRoute: typeof AppExplorerRoute
   AppIdentityRoute: typeof AppIdentityRoute
   AppLaunchRoute: typeof AppLaunchRoute
@@ -218,6 +238,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAssetsRoute: AppAssetsRoute,
+  AppDexAggregatorRoute: AppDexAggregatorRoute,
   AppExplorerRoute: AppExplorerRoute,
   AppIdentityRoute: AppIdentityRoute,
   AppLaunchRoute: AppLaunchRoute,

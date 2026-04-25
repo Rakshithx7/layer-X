@@ -4,8 +4,8 @@ import { AppShell } from "@/components/app/AppShell";
 export const Route = createFileRoute("/app")({
   head: () => ({
     meta: [
-      { title: "Dashboard — CryptoChat" },
-      { name: "description", content: "Your CryptoChat command center." },
+      { title: "Dashboard — layer-x" },
+      { name: "description", content: "Your layer-x command center." },
     ],
   }),
   component: AppLayout,

@@ -100,7 +100,7 @@ const STATUS_UI: Record<TxSummary["status"], { label: string; className: string 
 export const Route = createFileRoute("/app/transactions")({
   head: () => ({
     meta: [
-      { title: "Transactions — CryptoChat" },
+      { title: "Transactions — layer-x" },
       { name: "description", content: "Human-readable transaction explorer on Solana." },
     ],
   }),
