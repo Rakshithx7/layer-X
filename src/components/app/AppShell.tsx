@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, ArrowLeftRight, Compass, User, Settings } from "lucide-react";
+import { LayoutDashboard, ArrowLeftRight, Compass, User, Settings, BarChart3 } from "lucide-react";
 import { ContextPanel } from "./ContextPanel";
 import { WalletConnector } from "./WalletConnector";
 
@@ -7,6 +7,7 @@ const NAV = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/app/transactions", label: "Transactions", icon: ArrowLeftRight, exact: false },
   { to: "/app/explorer", label: "Explorer", icon: Compass, exact: false },
+  { to: "/app/dex-aggregator", label: "DEX Aggregator", icon: BarChart3, exact: false },
   { to: "/app/identity", label: "Identity", icon: User, exact: false },
   { to: "/app/settings", label: "Settings", icon: Settings, exact: false },
 ] as const;
@@ -14,15 +15,16 @@ const NAV = [
 export function AppShell({ children }: { children?: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isExplorerRoute = pathname.startsWith("/app/explorer");
+  const isDexAggregatorRoute = pathname.startsWith("/app/dex-aggregator");
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       {/* Sidebar */}
-      <aside className="hidden w-[220px] shrink-0 flex-col bg-sidebar md:flex">
+      <aside className="hidden w-55 shrink-0 flex-col bg-sidebar md:flex">
         <div className="px-6 pt-6 pb-10">
           <Link to="/" className="flex items-center gap-2">
             <span className="inline-block h-2 w-2 rounded-full bg-primary glow-primary-sm" />
-            <span className="font-mono text-sm font-medium tracking-tight">cryptochat</span>
+            <span className="font-mono text-sm font-medium tracking-tight">layer-x</span>
           </Link>
         </div>
 
@@ -36,7 +38,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
                   {active && (
                     <span
                       aria-hidden
-                      className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-r bg-primary glow-primary-sm"
+                      className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r bg-primary glow-primary-sm"
                     />
                   )}
                   <Link
@@ -67,7 +69,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       <main className="flex-1 min-w-0 animate-enter">{children ?? <Outlet />}</main>
 
       {/* Right context panel */}
-      {!isExplorerRoute ? <ContextPanel /> : null}
+      {!isExplorerRoute && !isDexAggregatorRoute ? <ContextPanel /> : null}
     </div>
   );
 }

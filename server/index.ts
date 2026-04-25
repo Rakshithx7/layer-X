@@ -326,7 +326,71 @@ async function main() {
           return sendJson(res, 200, { key: result.key });
         } catch (err: unknown) {
           console.error("Deepgram key generation exception:", err);
-          return sendError(res, 500, "Failed to generate speech token", err.message);
+          return sendError(
+            res,
+            500,
+            "Failed to generate speech token",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+      }
+
+      // JUPITER QUOTE PROXY
+      if (url.pathname === "/jupiter/quote" && req.method === "GET") {
+        const inputMint = url.searchParams.get("inputMint") ?? "";
+        const outputMint = url.searchParams.get("outputMint") ?? "";
+        const amount = url.searchParams.get("amount") ?? "";
+        const slippageBps = url.searchParams.get("slippageBps") ?? "50";
+        const onlyDirectRoutes = url.searchParams.get("onlyDirectRoutes") ?? "false";
+        const dexes = url.searchParams.get("dexes") ?? "";
+
+        if (!inputMint || !outputMint || !amount) {
+          return sendError(res, 400, "Missing quote parameters");
+        }
+
+        const apiKey = process.env.JUPITER_API_KEY?.trim();
+        const quoteUrl = new URL("https://api.jup.ag/swap/v1/quote");
+        quoteUrl.searchParams.set("inputMint", inputMint);
+        quoteUrl.searchParams.set("outputMint", outputMint);
+        quoteUrl.searchParams.set("amount", amount);
+        quoteUrl.searchParams.set("slippageBps", slippageBps);
+
+        if (dexes) {
+          quoteUrl.searchParams.set("dexes", dexes);
+        }
+
+        if (onlyDirectRoutes === "true") {
+          quoteUrl.searchParams.set("onlyDirectRoutes", "true");
+        }
+
+        try {
+          const response = await fetch(quoteUrl, {
+            headers: apiKey
+              ? {
+                  "x-api-key": apiKey,
+                  Authorization: `Bearer ${apiKey}`,
+                }
+              : undefined,
+          });
+
+          const payload = await response.text();
+          if (!response.ok) {
+            return sendError(res, response.status, "Failed to fetch Jupiter quote", payload);
+          }
+
+          res.writeHead(200, {
+            ...jsonHeaders(),
+            "Cache-Control": "no-store",
+          });
+          return res.end(payload);
+        } catch (err: unknown) {
+          console.error("Jupiter quote proxy exception:", err);
+          return sendError(
+            res,
+            500,
+            "Failed to fetch Jupiter quote",
+            err instanceof Error ? err.message : String(err),
+          );
         }
       }
 

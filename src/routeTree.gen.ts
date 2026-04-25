@@ -16,6 +16,7 @@ import { Route as AppTransactionsRouteImport } from './routes/app.transactions'
 import { Route as AppSettingsRouteImport } from './routes/app.settings'
 import { Route as AppIdentityRouteImport } from './routes/app.identity'
 import { Route as AppExplorerRouteImport } from './routes/app.explorer'
+import { Route as AppDexAggregatorRouteImport } from './routes/app.dex-aggregator'
 
 const AppRoute = AppRouteImport.update({
   id: '/app',
@@ -52,10 +53,16 @@ const AppExplorerRoute = AppExplorerRouteImport.update({
   path: '/explorer',
   getParentRoute: () => AppRoute,
 } as any)
+const AppDexAggregatorRoute = AppDexAggregatorRouteImport.update({
+  id: '/dex-aggregator',
+  path: '/dex-aggregator',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/dex-aggregator': typeof AppDexAggregatorRoute
   '/app/explorer': typeof AppExplorerRoute
   '/app/identity': typeof AppIdentityRoute
   '/app/settings': typeof AppSettingsRoute
@@ -64,6 +71,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/app/dex-aggregator': typeof AppDexAggregatorRoute
   '/app/explorer': typeof AppExplorerRoute
   '/app/identity': typeof AppIdentityRoute
   '/app/settings': typeof AppSettingsRoute
@@ -74,6 +82,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/dex-aggregator': typeof AppDexAggregatorRoute
   '/app/explorer': typeof AppExplorerRoute
   '/app/identity': typeof AppIdentityRoute
   '/app/settings': typeof AppSettingsRoute
@@ -85,6 +94,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/app/dex-aggregator'
     | '/app/explorer'
     | '/app/identity'
     | '/app/settings'
@@ -93,6 +103,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/app/dex-aggregator'
     | '/app/explorer'
     | '/app/identity'
     | '/app/settings'
@@ -102,6 +113,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/app'
+    | '/app/dex-aggregator'
     | '/app/explorer'
     | '/app/identity'
     | '/app/settings'
@@ -165,10 +177,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppExplorerRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/dex-aggregator': {
+      id: '/app/dex-aggregator'
+      path: '/dex-aggregator'
+      fullPath: '/app/dex-aggregator'
+      preLoaderRoute: typeof AppDexAggregatorRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppDexAggregatorRoute: typeof AppDexAggregatorRoute
   AppExplorerRoute: typeof AppExplorerRoute
   AppIdentityRoute: typeof AppIdentityRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -177,6 +197,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppDexAggregatorRoute: AppDexAggregatorRoute,
   AppExplorerRoute: AppExplorerRoute,
   AppIdentityRoute: AppIdentityRoute,
   AppSettingsRoute: AppSettingsRoute,
