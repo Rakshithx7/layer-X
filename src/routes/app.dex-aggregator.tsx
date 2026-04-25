@@ -257,7 +257,7 @@ function DexAggregatorPage() {
         </div>
         <h1 className="mt-4 text-2xl font-medium tracking-tight sm:text-3xl">DEX Aggregator</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Build a swap with token dropdowns, fetch aggregated and pool-level quotes in parallel,
+          Swap token, fetch aggregated and pool-level quotes in parallel,
           and surface the best execution path.
         </p>
       </header>
